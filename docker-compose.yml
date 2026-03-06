@@ -99,6 +99,7 @@ services:
       CVAT_ANALYTICS: 1
       CVAT_BASE_URL:
       ONE_RUNNING_JOB_IN_QUEUE_PER_USER:
+      DJANGO_SETTINGS_MODULE: settings
     command: init run server
     labels:
       traefik.enable: "true"
@@ -112,6 +113,11 @@ services:
       - cvat_data:/home/django/data
       - cvat_keys:/home/django/keys
       - cvat_logs:/home/django/logs
+      - ./patches/urls.py:/home/django/cvat/urls.py
+      - ./patches/iam-urls.py:/home/django/cvat/apps/iam/urls.py
+      - ./settings.py:/home/django/settings.py:ro
+    env_file:
+      - ./.env
     networks:
       cvat:
         aliases:
@@ -248,7 +254,9 @@ services:
 
   cvat_ui:
     container_name: cvat_ui
-    image: cvat/ui:${CVAT_VERSION:-v2.59.0}
+    build:
+      context: .
+      dockerfile: ./Dockerfile.ui
     restart: always
     depends_on:
       - cvat_server
@@ -420,12 +428,53 @@ services:
 
 volumes:
   cvat_db:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/cvat_db
+
   cvat_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/cvat_data
+
   cvat_keys:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/cvat_keys
+
   cvat_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/cvat_logs
+
   cvat_inmem_db:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/cvat_inmem_db
+
   cvat_events_db:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/cvat_events_db
+
   cvat_cache_db:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/cvat_cache_db
 
 networks:
   cvat:
