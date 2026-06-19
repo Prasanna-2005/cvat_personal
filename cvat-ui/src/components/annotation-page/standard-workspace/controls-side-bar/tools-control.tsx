@@ -388,6 +388,46 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
         }
     };
 
+
+    private async constructFromOCR(response: any, labelInstance: any, frame: number): Promise<void> {
+        const { curZOrder, createAnnotations } = this.props;
+        const { text, bbox, status } = response;
+
+
+        // 1. Locate the correct spec_id for the attribute named "text"
+        const textAttribute = labelInstance.attributes.find((attr: any) => attr.name === 'text');
+        if (!textAttribute) {
+            throw new Error(`Label "${labelInstance.name}" is missing a target attribute named "text".`);
+        }
+
+        // 2. Unpack rectangle bounds from Nuclio payload: [x1, y1, x2, y2]
+        const points = [
+            bbox[0][0], // left
+            bbox[0][1], // top
+            bbox[1][0], // right
+            bbox[1][1], // bottom
+        ];
+
+        // 3. Build canonical ObjectState using browser-layer attribute format
+        const object = new core.classes.ObjectState({
+            frame,
+            objectType: core.enums.ObjectType.SHAPE,
+            source: core.enums.Source.SEMI_AUTO,
+            label: labelInstance,
+            shapeType: core.enums.ShapeType.RECTANGLE,
+            points,
+            occluded: false,
+            zOrder: curZOrder,
+            attributes: {
+                [textAttribute.id]: text.trim()
+            },
+        });
+
+        // 4. Dispatch through CVAT's native Redux flow
+        createAnnotations([object]);
+    }
+
+
     private runInteractionRequest = async (interactionId: string): Promise<void> => {
         const { jobInstance, canvasInstance } = this.props;
         const { activeInteractor, fetching, convertMasksToPolygons } = this.state;
@@ -418,6 +458,23 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                     interactor,
                     { ...data, job: jobInstance.id },
                 ) as InteractorResults;
+
+                   // --- custom code ---
+                if (interactor.id === 'python-tesseract-ocr' || interactor.name.toLowerCase().includes('ocr')) {
+                    const { activeLabelID } = this.state;
+
+                    const labelInstance = jobInstance.labels.find((l: any) => l.id === activeLabelID);
+
+
+                    if (labelInstance) {
+                        await this.constructFromOCR(response, labelInstance, data.frame); // Passed correct 'frame' variable
+                    }
+
+                    // This releases the canvas without wiping shapeType prematurely
+                    canvasInstance.interact({ enabled: false });
+
+                    return;
+                }
 
                 // if only mask presented, let's receive points
                 if (response.mask && !response.points) {
