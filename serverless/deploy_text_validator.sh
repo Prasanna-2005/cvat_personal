@@ -33,7 +33,6 @@ do
         --env CVAT_FUNCTIONS_REDIS_PORT="6666" \
         --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
         --platform-config '{"attributes": {"network": "cvat_cvat"}}'\
-        --volume /home/prasanna/Desktop/STORE:/opt/nuclio/debug_output
 done
 
 nuctl get function --platform local
