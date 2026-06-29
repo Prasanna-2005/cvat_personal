@@ -13,7 +13,6 @@ import Select from 'antd/lib/select';
 
 import {
     MAX_ACCURACY,
-    marks,
 } from 'components/annotation-page/standard-workspace/controls-side-bar/approximation-accuracy';
 import { clamp } from 'utils/math';
 
@@ -23,7 +22,6 @@ interface Props {
     focusedObjectPadding: number;
     showAllInterpolationTracks: boolean;
     showObjectsTextAlways: boolean;
-    automaticBordering: boolean;
     adaptiveZoom: boolean;
     intelligentPolygonCrop: boolean;
     defaultApproxPolyAccuracy: number;
@@ -38,7 +36,6 @@ interface Props {
     onChangeDefaultApproxPolyAccuracy(approxPolyAccuracy: number): void;
     onSwitchShowingInterpolatedTracks(enabled: boolean): void;
     onSwitchShowingObjectsTextAlways(enabled: boolean): void;
-    onSwitchAutomaticBordering(enabled: boolean): void;
     onSwitchAdaptiveZoom(enabled: boolean): void;
     onSwitchIntelligentPolygonCrop(enabled: boolean): void;
     onChangeTextFontSize(fontSize: number): void;
@@ -55,7 +52,6 @@ function WorkspaceSettingsComponent(props: Props): JSX.Element {
         focusedObjectPadding,
         showAllInterpolationTracks,
         showObjectsTextAlways,
-        automaticBordering,
         adaptiveZoom,
         intelligentPolygonCrop,
         defaultApproxPolyAccuracy,
@@ -69,7 +65,6 @@ function WorkspaceSettingsComponent(props: Props): JSX.Element {
         onChangeFocusedObjectPadding,
         onSwitchShowingInterpolatedTracks,
         onSwitchShowingObjectsTextAlways,
-        onSwitchAutomaticBordering,
         onSwitchAdaptiveZoom,
         onSwitchIntelligentPolygonCrop,
         onChangeDefaultApproxPolyAccuracy,
@@ -173,6 +168,7 @@ function WorkspaceSettingsComponent(props: Props): JSX.Element {
                         <Select.Option value='source'>Source</Select.Option>
                         <Select.Option value='descriptions'>Descriptions</Select.Option>
                         <Select.Option value='dimensions'>Dimensions</Select.Option>
+                        <Select.Option value='layer'>Layer</Select.Option>
                     </Select>
                 </Col>
             </Row>
@@ -201,24 +197,6 @@ function WorkspaceSettingsComponent(props: Props): JSX.Element {
                         max={20}
                         value={textFontSize}
                     />
-                </Col>
-            </Row>
-            <Row className='cvat-workspace-settings-autoborders cvat-player-setting'>
-                <Col span={24}>
-                    <Checkbox
-                        className='cvat-text-color'
-                        checked={automaticBordering}
-                        onChange={(event: CheckboxChangeEvent): void => {
-                            onSwitchAutomaticBordering(event.target.checked);
-                        }}
-                    >
-                        Automatic bordering
-                    </Checkbox>
-                </Col>
-                <Col span={24}>
-                    <Text type='secondary'>
-                        Enable automatic bordering for polygons and polylines during drawing/editing
-                    </Text>
                 </Col>
             </Row>
             <Row className='cvat-workspace-settings-adaptive-zoom cvat-player-setting'>
@@ -310,7 +288,7 @@ function WorkspaceSettingsComponent(props: Props): JSX.Element {
             </Row>
             <Row className='cvat-workspace-settings-approx-poly-threshold cvat-player-setting'>
                 <Col>
-                    <Text className='cvat-text-color'>Default number of points in polygon approximation</Text>
+                    <Text className='cvat-text-color'>Default polygon simplification threshold</Text>
                 </Col>
                 <Col span={7} offset={1}>
                     <Slider
@@ -320,11 +298,13 @@ function WorkspaceSettingsComponent(props: Props): JSX.Element {
                         value={defaultApproxPolyAccuracy}
                         dots
                         onChange={onChangeDefaultApproxPolyAccuracy}
-                        marks={marks}
                     />
                 </Col>
                 <Col>
-                    <Text type='secondary'>Works for serverless interactors and OpenCV scissors</Text>
+                    <Text type='secondary'>
+                        Higher values preserve more polygon detail. Used for serverless interactors,
+                        OpenCV scissors, and polygon simplification
+                    </Text>
                 </Col>
             </Row>
         </div>

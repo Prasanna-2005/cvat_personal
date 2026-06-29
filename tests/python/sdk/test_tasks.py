@@ -19,6 +19,7 @@ from PIL import Image
 from pytest_cases import fixture_ref, parametrize
 
 from shared.fixtures.data import CloudStorageAssets
+from shared.utils.config import make_sdk_client
 from shared.utils.helpers import generate_image_files
 
 from .common import TestDatasetExport
@@ -58,12 +59,7 @@ class TestTaskUsecases(TestDatasetExport):
 
     @pytest.fixture
     def fxt_new_task_without_data(self):
-        task = self.client.tasks.create(
-            spec={
-                "name": "test_task",
-                "labels": [{"name": "car"}, {"name": "person"}],
-            },
-        )
+        task = self.client.tasks.create(spec={"name": "test_task"})
 
         return task
 
@@ -91,21 +87,6 @@ class TestTaskUsecases(TestDatasetExport):
 
         task_spec = {
             "name": f"test {self.user} to create a task with local data",
-            "labels": [
-                {
-                    "name": "car",
-                    "color": "#ff00ff",
-                    "attributes": [
-                        {
-                            "name": "a",
-                            "mutable": True,
-                            "input_type": "number",
-                            "default_value": "5",
-                            "values": ["4", "5", "6"],
-                        }
-                    ],
-                }
-            ],
         }
 
         data_params = {
@@ -152,10 +133,7 @@ class TestTaskUsecases(TestDatasetExport):
 
     def test_can_create_task_with_remote_data(self):
         task = self.client.tasks.create_from_data(
-            spec={
-                "name": "test_task",
-                "labels": [{"name": "car"}, {"name": "person"}],
-            },
+            spec={"name": "test_task"},
             resource_type=ResourceType.SHARE,
             resources=["images/image_1.jpg", "images/image_2.jpg"],
             # make sure string fields are transferred correctly;
@@ -173,11 +151,6 @@ class TestTaskUsecases(TestDatasetExport):
 
         task_spec = {
             "name": f"test {self.user} to create a task with no data",
-            "labels": [
-                {
-                    "name": "car",
-                }
-            ],
         }
 
         with pytest.raises(BackgroundRequestException) as capture:
@@ -198,7 +171,6 @@ class TestTaskUsecases(TestDatasetExport):
         task = self.client.tasks.create(
             {
                 "name": f"test task",
-                "labels": [{"name": "car"}],
             }
         )
 
@@ -617,3 +589,20 @@ class TestTaskUsecases(TestDatasetExport):
         assert len(anns.tracks) == 1
         assert len(anns.tags) == 1
         assert self.stdout.getvalue() == ""
+
+
+@pytest.mark.usefixtures("restore_db_per_function")
+def test_org_maintainer_can_get_task_resources_without_explicit_org_context(
+    fxt_org_resource_hierarchy,
+):
+    resources = fxt_org_resource_hierarchy()
+
+    with make_sdk_client(resources.maintainer_username) as maintainer_client:
+        task = maintainer_client.tasks.retrieve(resources.task_id)
+        jobs = task.get_jobs()
+        labels = task.get_labels()
+
+        assert maintainer_client.organization_slug is None
+        assert len(jobs) == 1
+        assert jobs[0].id == resources.job_id
+        assert {label.name for label in labels} == {"car"}

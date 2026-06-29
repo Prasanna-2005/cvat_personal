@@ -108,6 +108,14 @@ is_job_staff if {
     is_job_assignee
 }
 
+is_task_or_project_owner if {
+    is_task_owner
+}
+
+is_task_or_project_owner if {
+    is_project_owner
+}
+
 default allow := false
 
 allow if {
@@ -125,43 +133,35 @@ allow if {
 }
 
 
-filter := [] if { # Django Q object to filter list of entries
+base_filter := {} if { # Django Q object to filter list of entries
     utils.is_admin
-    utils.is_sandbox
-} else := qobject if {
-    utils.is_admin
-    utils.is_organization
-    qobject := [
-        {"segment__task__organization": input.auth.organization.id},
-        {"segment__task__project__organization": input.auth.organization.id}, "|" ]
 } else := qobject if {
     utils.is_sandbox
     user := input.auth.user
-    qobject := [
+    qobject := ["|",
         {"assignee_id": user.id},
-        {"segment__task__owner_id": user.id}, "|",
-        {"segment__task__assignee_id": user.id}, "|",
-        {"segment__task__project__owner_id": user.id}, "|",
-        {"segment__task__project__assignee_id": user.id}, "|"]
-} else := qobject if {
+        {"segment__task__owner_id": user.id},
+        {"segment__task__assignee_id": user.id},
+        {"segment__task__project__owner_id": user.id},
+        {"segment__task__project__assignee_id": user.id},
+    ]
+} else := {} if {
     utils.is_organization
     utils.has_perm(utils.USER)
     organizations.has_perm(organizations.MAINTAINER)
-    qobject := [
-        {"segment__task__organization": input.auth.organization.id},
-        {"segment__task__project__organization": input.auth.organization.id}, "|"]
 } else := qobject if {
     organizations.has_perm(organizations.WORKER)
     user := input.auth.user
-    qobject := [
+    qobject := ["|",
         {"assignee_id": user.id},
-        {"segment__task__owner_id": user.id}, "|",
-        {"segment__task__assignee_id": user.id}, "|",
-        {"segment__task__project__owner_id": user.id}, "|",
-        {"segment__task__project__assignee_id": user.id}, "|",
-        {"segment__task__organization": input.auth.organization.id},
-        {"segment__task__project__organization": input.auth.organization.id}, "|", "&"]
+        {"segment__task__owner_id": user.id},
+        {"segment__task__assignee_id": user.id},
+        {"segment__task__project__owner_id": user.id},
+        {"segment__task__project__assignee_id": user.id},
+    ]
 }
+
+filter := utils.add_organization_filter(base_filter, ["segment__task__organization"])
 
 allow if {
     input.scope in {utils.CREATE, utils.DELETE}
@@ -201,12 +201,24 @@ allow if {
 
 allow if {
     input.scope in {
-        utils.VIEW,
-        utils.EXPORT_DATASET, utils.EXPORT_ANNOTATIONS,
-        utils.VIEW_ANNOTATIONS, utils.VIEW_DATA, utils.VIEW_METADATA
+        utils.VIEW, utils.VIEW_ANNOTATIONS, utils.VIEW_DATA, utils.VIEW_METADATA
     }
     input.auth.organization.id == input.resource.organization.id
     organizations.has_perm(organizations.WORKER)
+    is_job_staff
+}
+
+allow if {
+    input.scope in {utils.EXPORT_DATASET, utils.EXPORT_ANNOTATIONS}
+    input.auth.organization.id == input.resource.organization.id
+    organizations.has_perm(organizations.WORKER)
+    is_task_or_project_owner
+}
+
+allow if {
+    input.scope in {utils.EXPORT_DATASET, utils.EXPORT_ANNOTATIONS}
+    input.auth.organization.id == input.resource.organization.id
+    organizations.has_perm(organizations.SUPERVISOR)
     is_job_staff
 }
 

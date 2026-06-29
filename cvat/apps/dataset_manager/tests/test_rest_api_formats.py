@@ -25,6 +25,7 @@ from unittest.mock import DEFAULT as MOCK_DEFAULT
 from unittest.mock import MagicMock, patch
 
 import av
+import datumaro
 import numpy as np
 from attr import define, field
 from datumaro.components.comparator import EqualityComparator
@@ -169,13 +170,13 @@ class _DbTestBase(ExportApiTestBase, ImportApiTestBase):
 
     def _put_api_v2_task_id_annotations(self, tid, data):
         with ForceLogin(self.admin, self.client):
-            response = self.client.put("/api/tasks/%s/annotations" % tid, data=data, format="json")
+            response = self.client.put(f"/api/tasks/{tid}/annotations", data=data, format="json")
 
         return response
 
     def _put_api_v2_job_id_annotations(self, jid, data):
         with ForceLogin(self.admin, self.client):
-            response = self.client.put("/api/jobs/%s/annotations" % jid, data=data, format="json")
+            response = self.client.put(f"/api/jobs/{jid}/annotations", data=data, format="json")
 
         return response
 
@@ -193,7 +194,7 @@ class _DbTestBase(ExportApiTestBase, ImportApiTestBase):
     @staticmethod
     def _generate_task_images(count, name_offsets=0):  # pylint: disable=no-self-use
         images = {
-            "client_files[%d]" % i: generate_image_file("image_%d.jpg" % (i + name_offsets))
+            f"client_files[{i}]": generate_image_file(f"image_{i + name_offsets}.jpg")
             for i in range(count)
         }
         images["image_quality"] = 75
@@ -201,9 +202,7 @@ class _DbTestBase(ExportApiTestBase, ImportApiTestBase):
 
     @staticmethod
     def _generate_task_videos(count):  # pylint: disable=no-self-use
-        videos = {
-            "client_files[%d]" % i: generate_video_file("video_%d.mp4" % i) for i in range(count)
-        }
+        videos = {f"client_files[{i}]": generate_video_file(f"video_{i}.mp4") for i in range(count)}
         videos["image_quality"] = 75
         return videos
 
@@ -213,7 +212,7 @@ class _DbTestBase(ExportApiTestBase, ImportApiTestBase):
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
             tid = response.data["id"]
 
-            response = self.client.post("/api/tasks/%s/data" % tid, data=image_data)
+            response = self.client.post(f"/api/tasks/{tid}/data", data=image_data)
             self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
             rq_id = response.json()["rq_id"]
 
@@ -224,12 +223,14 @@ class _DbTestBase(ExportApiTestBase, ImportApiTestBase):
                 response_json["status"], "finished", msg=f"Message: {response_json['message']}"
             )
 
-            response = self.client.get("/api/tasks/%s" % tid)
+            response = self.client.get(f"/api/tasks/{tid}")
 
             if 200 <= response.status_code < 400:
                 labels_response = list(
                     get_paginated_collection(
-                        lambda page: self.client.get("/api/labels?task_id=%s&page=%s" % (tid, page))
+                        lambda page: self.client.get(
+                            "/api/labels", query_params={"task_id": tid, "page": page}
+                        )
                     )
                 )
                 response.data["labels"] = labels_response
@@ -249,7 +250,9 @@ class _DbTestBase(ExportApiTestBase, ImportApiTestBase):
     def _get_jobs(self, task_id):
         with ForceLogin(self.admin, self.client):
             values = get_paginated_collection(
-                lambda page: self.client.get("/api/jobs?task_id={}&page={}".format(task_id, page))
+                lambda page: self.client.get(
+                    "/api/jobs", query_params={"task_id": task_id, "page": page}
+                )
             )
         return values
 
@@ -257,7 +260,7 @@ class _DbTestBase(ExportApiTestBase, ImportApiTestBase):
         with ForceLogin(self.admin, self.client):
             values = get_paginated_collection(
                 lambda page: self.client.get(
-                    "/api/tasks", data={"project_id": project_id, "page": page}
+                    "/api/tasks", query_params={"project_id": project_id, "page": page}
                 )
             )
         return values
@@ -383,6 +386,7 @@ class TaskDumpUploadTest(_DbTestBase):
                     "Kitti Raw Format 1.0",
                     "Sly Point Cloud Format 1.0",
                     "Datumaro 3D 1.0",
+                    "Generic TSV 1.0",
                 ]:
                     continue
                 dump_format_name = dump_format.DISPLAY_NAME
@@ -525,6 +529,7 @@ class TaskDumpUploadTest(_DbTestBase):
                     "Kitti Raw Format 1.0",
                     "Sly Point Cloud Format 1.0",
                     "Datumaro 3D 1.0",
+                    "Generic TSV 1.0",
                 ]:
                     continue
                 dump_format_name = dump_format.DISPLAY_NAME
@@ -869,7 +874,6 @@ class TaskDumpUploadTest(_DbTestBase):
         test_cases = ["all", "first"]
 
         for dump_format_name in dump_formats:
-
             images = self._generate_task_images(10)
             task = self._create_task(tasks["change overlap and segment size"], images)
             task_id = task["id"]
@@ -967,8 +971,9 @@ class TaskDumpUploadTest(_DbTestBase):
 
         with TestDir() as test_dir:
             for dump_format in dump_formats:
-                if not dump_format.ENABLED:
+                if not dump_format.ENABLED or dump_format.DISPLAY_NAME == "Generic TSV 1.0":
                     continue
+
                 dump_format_name = dump_format.DISPLAY_NAME
                 with self.subTest(format=dump_format_name):
                     images = self._generate_task_images(3)
@@ -1030,6 +1035,8 @@ class TaskDumpUploadTest(_DbTestBase):
                         "Cityscapes 1.0",  # expanding annotations due to background mask
                     ]:
                         self.skipTest("Format is fail")
+                    elif dump_format_name == "Generic TSV 1.0":
+                        self.skipTest("Not relevant")  # requires an audio task
 
                     images = self._generate_task_images(3)
                     if dump_format_name in [
@@ -1166,6 +1173,10 @@ class TaskDumpUploadTest(_DbTestBase):
                         "Datumaro 3D 1.0",
                     ]:
                         self.skipTest("Format is fail")
+                    elif dump_format_name == "Generic TSV 1.0":
+                        self.skipTest(
+                            "Not relevant"
+                        )  # requires an audio task, not available in datumaro
 
                     # create task
                     images = self._generate_task_images(3)
@@ -1828,10 +1839,10 @@ class ExportBehaviorTest(_DbTestBase):
 
             with (
                 patch(
-                    "cvat.apps.redis_handler.background.get_export_cache_lock",
+                    "cvat.apps.engine.background.get_export_cache_lock",
                     new=self.patched_get_export_cache_lock,
                 ),
-                patch("cvat.apps.redis_handler.background.osp.exists") as mock_osp_exists,
+                patch("cvat.apps.engine.background.osp.exists") as mock_osp_exists,
                 TemporaryDirectory() as temp_dir,
             ):
                 mock_osp_exists.side_effect = patched_osp_exists
@@ -2294,6 +2305,7 @@ class ProjectDumpUpload(_DbTestBase):
                 if not dump_format.ENABLED or dump_format.DISPLAY_NAME in [
                     "Kitti Raw Format 1.0",
                     "Sly Point Cloud Format 1.0",
+                    "Generic TSV 1.0",
                 ]:
                     continue
                 dump_format_name = dump_format.DISPLAY_NAME
@@ -2420,7 +2432,7 @@ class ProjectDumpUpload(_DbTestBase):
             for dump_format in dump_formats:
                 if (
                     not dump_format.ENABLED
-                    or dump_format.DIMENSION == dm.bindings.DimensionType.DIM_3D
+                    or dump_format.DIMENSION != dm.bindings.DimensionType.DIM_2D
                 ):
                     continue
                 dump_format_name = dump_format.DISPLAY_NAME
@@ -2458,8 +2470,10 @@ class ProjectDumpUpload(_DbTestBase):
         user = self.admin
 
         with TestDir() as test_dir:
-            # Dump annotations with objects type is track
-            # create task with annotations
+            # Clean up from previous tests and iterations
+            self._clear_rq_jobs()
+
+            # Create task with annotations
             project_dict = copy.deepcopy(projects["main"])
             task_dict = copy.deepcopy(tasks[dump_format_name])
             project_dict["labels"] = task_dict["labels"]
@@ -2481,9 +2495,8 @@ class ProjectDumpUpload(_DbTestBase):
             task = self._create_task(task_dict, video)
             task_id = task["id"]
             self._create_annotations(task, "skeleton track", "default")
-            # dump annotations
-            self._clear_rq_jobs()  # clean up from previous tests and iterations
 
+            # Export annotations
             file_zip_name = osp.join(test_dir, f"{test_name}_{dump_format_name}.zip")
             self._export_project_dataset(
                 user,
@@ -2495,7 +2508,7 @@ class ProjectDumpUpload(_DbTestBase):
 
             data_from_task_before_upload = self._get_data_from_task(task_id, True)
 
-            # Upload annotations with objects type is track
+            # Import annotations
             project = self._create_project(project_dict)
 
             with open(file_zip_name, "rb") as binary_file:
@@ -2506,7 +2519,23 @@ class ProjectDumpUpload(_DbTestBase):
                     query_params={"format": upload_format_name},
                 )
 
-            # equals annotations
+            # Check annotations
+            expected_dataset = datumaro.Dataset(data_from_task_before_upload)
+            expected_dataset.init_cache()
+
+            # The imported annotations are expected to contain only keyframes in tracks,
+            # even if the annotations were interpolated originally.
+            self.assertEqual(len(expected_dataset), task["size"])
+            for item in expected_dataset:
+                for ann in item.annotations:
+                    if "keyframe" in ann.attributes:
+                        ann.attributes["keyframe"] = True
+
+                    if isinstance(ann, datumaro.Skeleton):
+                        for point in ann.elements:
+                            if "keyframe" in ann.attributes:
+                                point.attributes["keyframe"] = True
+
             new_task = self._get_tasks(project["id"])[0]
             data_from_task_after_upload = self._get_data_from_task(new_task["id"], True)
-            compare_datasets(data_from_task_before_upload, data_from_task_after_upload)
+            compare_datasets(expected_dataset, data_from_task_after_upload)
