@@ -112,6 +112,12 @@ function LoginFormComponent(props: Props): JSX.Element {
                     onSubmit(loginData);
                 }}
             >
+                <Button
+                    className='cvat-credentials-action-button'
+                    onClick={() => {window.location.pathname = '/api/allauth/keycloak/login';}}
+                >
+                    Login with Quantrium's Keycloak
+                </Button>
                 {renderBasicLoginComponent && (
                     <>
                         <Form.Item

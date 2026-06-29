@@ -1,0 +1,46 @@
+metadata:
+  name: python-external-ocr
+  namespace: cvat
+  annotations:
+    name: Finuit API OCR
+    version: 2
+    type: interactor
+    min_pos_points: 0
+    min_neg_points: -1
+    startswith_box: true
+    help_message: Draw a bounding box to extract text using the external Finuit API.
+
+spec:
+  description: External API OCR engine for bounding box regions
+  runtime: 'python:3.11'
+  handler: main:handler
+  eventTimeout: 120s
+  env:
+    - name: PYTHONPATH
+      value: /opt/nuclio
+
+  build:
+    image: cvat.python.external.ocr
+    baseImage: python:3.11-slim
+
+    directives:
+      preCopy:
+        - kind: RUN
+          value: pip install --no-cache-dir requests Pillow
+        - kind: WORKDIR
+          value: /opt/nuclio
+
+  triggers:
+    myHttpTrigger:
+      numWorkers: 2
+      kind: 'http'
+      workerAvailabilityTimeoutMilliseconds: 10000
+      attributes:
+        maxRequestBodySize: 33554432 # 32MB
+
+  platform:
+    attributes:
+      restartPolicy:
+        name: always
+        maximumRetryCount: 3
+      mountMode: volume

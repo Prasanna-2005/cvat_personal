@@ -3,6 +3,8 @@
 //
 // SPDX-License-Identifier: MIT
 
+
+
 import React, { ReactPortal } from 'react';
 import ReactDOM from 'react-dom';
 import { connect } from 'react-redux';
@@ -52,6 +54,9 @@ import { switchToolsBlockerState } from 'actions/settings-actions';
 import withVisibilityHandling from './handle-popover-visibility';
 import ToolsTooltips from './interactor-tooltips';
 
+import { reviewActions, finishIssueAsync } from 'actions/review-actions';
+import { ThunkDispatch } from 'utils/redux';
+
 interface StateToProps {
     canvasInstance: Canvas;
     labels: Label[];
@@ -77,6 +82,7 @@ interface DispatchToProps {
     onInteractionStart: typeof interactWithCanvas;
     onSwitchToolsBlockerState: typeof switchToolsBlockerState;
     switchNavigationBlocked: typeof switchNavigationBlockedAction;
+    dispatch: ThunkDispatch;
 }
 
 const MIN_SUPPORTED_INTERACTOR_VERSION = 2;
@@ -134,14 +140,26 @@ function mapStateToProps(state: CombinedState): StateToProps {
     };
 }
 
-const mapDispatchToProps = {
-    onInteractionStart: interactWithCanvas,
-    updateAnnotations: updateAnnotationsAsync,
-    createAnnotations: createAnnotationsAsync,
-    fetchAnnotations: fetchAnnotationsAsync,
-    onSwitchToolsBlockerState: switchToolsBlockerState,
-    switchNavigationBlocked: switchNavigationBlockedAction,
-};
+// const mapDispatchToProps = {
+//     onInteractionStart: interactWithCanvas,
+//     updateAnnotations: updateAnnotationsAsync,
+//     createAnnotations: createAnnotationsAsync,
+//     fetchAnnotations: fetchAnnotationsAsync,
+//     onSwitchToolsBlockerState: switchToolsBlockerState,
+//     switchNavigationBlocked: switchNavigationBlockedAction,
+// };
+function mapDispatchToProps(dispatch: ThunkDispatch): DispatchToProps {
+    return {
+        onInteractionStart: (...args) => dispatch(interactWithCanvas(...args)),
+        updateAnnotations: (...args) => dispatch(updateAnnotationsAsync(...args)),
+        createAnnotations: (...args) => dispatch(createAnnotationsAsync(...args)),
+        fetchAnnotations: () => dispatch(fetchAnnotationsAsync()),
+        onSwitchToolsBlockerState: (...args) => dispatch(switchToolsBlockerState(...args)),
+        switchNavigationBlocked: (...args) => dispatch(switchNavigationBlockedAction(...args)),
+        dispatch,
+    };
+}
+
 
 type Props = StateToProps & DispatchToProps;
 interface TrackedShape {
@@ -178,11 +196,11 @@ function trackedRectangleMapper(shape: MinimalShape): MinimalShape {
         points: shape.points.reduce(
             (acc: number[], value: number, index: number): number[] => {
                 if (index % 2) {
-                // y
+                    // y
                     acc[1] = Math.min(acc[1], value);
                     acc[3] = Math.max(acc[3], value);
                 } else {
-                // x
+                    // x
                     acc[0] = Math.min(acc[0], value);
                     acc[2] = Math.max(acc[2], value);
                 }
@@ -399,9 +417,203 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
             this.interaction.isAborted = true;
         }
     };
+     // ----------------------------------------------------------------------------------------------PATCH : OCR
+
+    private async constructFromOCR(response: any, labelInstance: any, frame: number): Promise<void> {
+        const { curZOrder, createAnnotations } = this.props;
+        const { text, bbox } = response;
+
+
+        // 1. Locate the correct spec_id for the attribute named "text"
+        const textAttribute = labelInstance.attributes.find((attr: any) => attr.name.toLowerCase().includes('text'));
+        if (!textAttribute) {
+            throw new Error(`Label "${labelInstance.name}" is missing a target attribute named "text".`);
+        }
+
+        // 2. Unpack rectangle bounds from Nuclio payload: [x1, y1, x2, y2]
+        const points = [
+            bbox[0][0], // left
+            bbox[0][1], // top
+            bbox[1][0], // right
+            bbox[1][1], // bottom
+        ];
+
+        // 3. Build canonical ObjectState using browser-layer attribute format
+        const object = new core.classes.ObjectState({
+            frame,
+            objectType: core.enums.ObjectType.SHAPE,
+            source: core.enums.Source.SEMI_AUTO,
+            label: labelInstance,
+            shapeType: core.enums.ShapeType.RECTANGLE,
+            points,
+            occluded: false,
+            zOrder: curZOrder,
+            attributes: {
+                [textAttribute.id]: text.trim()
+            },
+        });
+
+        // 4. Dispatch through CVAT's native Redux flow
+        createAnnotations([object]);
+    }
+    // --------------------------------------PATCH : VALIDATION---------------------
+    // ─── Validator helpers ────────────────────────────────────────────────────
+
+private static readonly TEXT_ATTR_NAMES = new Set(['text', 'cell_text']);
+
+private static getTextAttrValue(state: ObjectState): string {
+    const attrValues: Record<number, string> = state.attributes as Record<number, string>;
+    const descriptors: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
+    for (const desc of descriptors) {
+        if (ToolsControlComponent.TEXT_ATTR_NAMES.has(desc.name) && desc.id !== undefined) {
+            return attrValues[desc.id] ?? '';
+        }
+    }
+    return '';
+}
+
+private static getShapeAabb(
+    state: ObjectState,
+): [number, number, number, number] | null {
+    const pts = state.points as number[];
+    if (!pts || !pts.length) return null;
+
+    if (state.shapeType === ShapeType.RECTANGLE) {
+        return [pts[0], pts[1], pts[2], pts[3]];
+    }
+
+    if (state.shapeType === ShapeType.POLYGON) {
+        let minX = Infinity; let minY = Infinity;
+        let maxX = -Infinity; let maxY = -Infinity;
+        for (let i = 0; i < pts.length - 1; i += 2) {
+            const x = pts[i]; const y = pts[i + 1];
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+        }
+        return [minX, minY, maxX, maxY];
+    }
+
+    return null;
+}
+
+private static aabbOverlaps(
+    xtl: number, ytl: number, xbr: number, ybr: number,
+    selXtl: number, selYtl: number, selXbr: number, selYbr: number,
+): boolean {
+    if (xbr <= selXtl) return false;
+    if (xtl >= selXbr) return false;
+    if (ybr <= selYtl) return false;
+    if (ytl >= selYbr) return false;
+    return true;
+}
+
+private buildValidatorPayload(
+    selBbox: [number, number, number, number],
+): {
+    xDataRects: Record<string, { text: string; rects: [number, number, number, number] }>;
+    cellStateMap: Record<number, ObjectState>;
+} {
+    const { states, labels } = this.props;
+    const { activeLabelID } = this.state;
+
+    const selectedLabel = labels.find((l) => l.id === activeLabelID);
+    const [selXtl, selYtl, selXbr, selYbr] = selBbox;
+    const xDataRects: Record<string, { text: string; rects: [number, number, number, number] }> = {};
+    const cellStateMap: Record<number, ObjectState> = {};
+
+    for (const state of states){
+        if (state.clientID ==  null) continue;
+
+        console.log(state);
+        if (!selectedLabel || (state.label as any).id !== selectedLabel.id) continue;
+
+        const labelAttrs: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
+        if (!labelAttrs.some((a) => ToolsControlComponent.TEXT_ATTR_NAMES.has(a.name))) continue;
+
+        const textop = ToolsControlComponent.getTextAttrValue(state);
+        if (textop == "") continue;
+
+        const aabb = ToolsControlComponent.getShapeAabb(state);
+        if (!aabb) continue;
+
+        const [xtl, ytl, xbr, ybr] = aabb;
+        if (!ToolsControlComponent.aabbOverlaps(xtl, ytl, xbr, ybr, selXtl, selYtl, selXbr, selYbr)) continue;
+        const cellId = state.clientID;
+        xDataRects[String(cellId)] = {
+            text: textop,
+            rects: [xtl, ytl, xbr, ybr],
+        };
+
+        cellStateMap[cellId] = state;
+
+    }
+
+    return { xDataRects, cellStateMap };
+}
+
+private async dispatchValidatorIssues(
+    lambdaResponse: Record<string, Record<any, any>>,
+    cellStateMap: Record<number, ObjectState>,
+): Promise<void> {
+    const { dispatch,jobInstance,frame } = this.props;
+
+    let issueCount = 0;
+    for (const [cellIdStr, result] of Object.entries(lambdaResponse)) {
+        if (result.match) continue;
+
+
+        const cellId = Number(cellIdStr);
+        const state = cellStateMap[cellId];
+        if (!state) continue;
+
+        const aabb = ToolsControlComponent.getShapeAabb(state);
+        if (!aabb) continue;
+
+        const [xtl, ytl, xbr, ybr] = aabb;
+        const position: number[] = [
+            xtl, ytl,
+            xbr, ytl,
+            xbr, ybr,
+            xtl, ybr,
+            xtl,ytl
+        ];
+        try {
+        const issue = new core.classes.Issue({
+            job: jobInstance.id,
+            frame: frame,
+            position: position,
+        });
+
+        const lltext = result.lltext ?? '';
+        if (!lltext) continue;
+
+        const savedIssue = await jobInstance.openIssue(issue, `Received ${lltext}`);
+        dispatch(reviewActions.finishIssueSuccess(frame, savedIssue));
+        issueCount++;
+        }
+        catch (error) {
+            dispatch(reviewActions.finishIssueFailed(error));
+        }
+    }
+    if (issueCount == 0){
+        notification.success({
+            message : `Validator: No issues created !!`,
+        });
+    }
+    if (issueCount > 0) {
+        notification.success({
+            message: `Validator: ${issueCount} issue(s) created.`,
+        });
+    }
+}
+
+// ─── End validator helpers ────────────────────────────────────────────────
+
 
     private runInteractionRequest = async (interactionId: string): Promise<void> => {
-        const { jobInstance } = this.props;
+        const { jobInstance, canvasInstance } = this.props;
         const { activeInteractor, fetching } = this.state;
 
         const { id, latestRequest } = this.interaction;
@@ -427,11 +639,67 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                 this.setState({ fetching: true });
 
                 await this.initializeOpenCV();
+                // Extract selection bbox from the drawn rectangle
+                const rawBboxTL = data.obj_bbox?.[0]; // [x1, y1]
+                const rawBboxBR = data.obj_bbox?.[1]; // [x2, y2]
+                const selBbox: [number, number, number, number] | undefined =
+                    rawBboxTL?.length >= 2 && rawBboxBR?.length >= 2
+                        ? [rawBboxTL[0], rawBboxTL[1], rawBboxBR[0], rawBboxBR[1]]
+                        : undefined;
+
+                // console.log(selBbox)
+
+                let xDataRects: Record<string, { text: string; rects: [number, number, number, number] }> = {};
+                let cellStateMap: Record<number, ObjectState> = {};
+
+                if (selBbox) {
+                    ({ xDataRects, cellStateMap } = this.buildValidatorPayload(selBbox));
+                }
+
+                // If this is a validator interactor but no matching annotations were found, bail early
+                if (interactor.name.toLowerCase().includes('validator') && selBbox && Object.keys(xDataRects).length === 0) {
+                    notification.warning({
+                        message: 'Validator: no matching annotations found in selection.',
+                        duration: 3,
+                    });
+                    canvasInstance.interact({ enabled: false });
+                    return;
+                }
+
                 const response = await core.lambda.call(
                     jobInstance.taskId,
                     interactor,
-                    { ...data, job: jobInstance.id },
-                ) as InteractorResults;
+                    {
+                        ...data,
+                        job: jobInstance.id,
+                        ...(selBbox && Object.keys(xDataRects).length ? { rects: xDataRects } : {}),
+                    },
+                ) as InteractorResults & Record<string, unknown>;
+
+                if (interactor.name.toLowerCase().includes('validator')) {
+                    await this.dispatchValidatorIssues(response as unknown as Record<string, Record<any, any>>,
+                        cellStateMap,
+                    );
+                    canvasInstance.interact({ enabled: false });
+                    return;
+                }
+
+                // --- custom code -1 ocr---
+                if (interactor.id === 'python-tesseract-ocr' || 'python-external-ocr' || interactor.name.toLowerCase().includes('ocr')) {
+                    const { activeLabelID } = this.state;
+
+                    const labelInstance = jobInstance.labels.find((l: any) => l.id === activeLabelID);
+
+
+                    if (labelInstance) {
+                        await this.constructFromOCR(response, labelInstance, data.frame); // Passed correct 'frame' variable
+                    }
+
+                    // This releases the canvas without wiping shapeType prematurely
+                    canvasInstance.interact({ enabled: false });
+
+                    return;
+                }
 
                 if (this.interaction.id !== interactionId || this.interaction.isAborted) {
                     // new interaction session or the session is aborted
@@ -861,9 +1129,8 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
 
                         const numOfObjects = trackableObjects.clientIDs.length;
                         hideMessage = message.loading({
-                            content: `${tracker.name}: states are being initialized for ${numOfObjects} ${
-                                numOfObjects > 1 ? 'objects' : 'object'
-                            } ..`,
+                            content: `${tracker.name}: states are being initialized for ${numOfObjects} ${numOfObjects > 1 ? 'objects' : 'object'
+                                } ..`,
                             duration: 0,
                             className: 'cvat-tracking-notice',
                         });
@@ -909,9 +1176,8 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
 
                         const numOfObjects = trackableObjects.clientIDs.length;
                         hideMessage = message.loading({
-                            content: `${tracker.name}: ${numOfObjects} ${
-                                numOfObjects > 1 ? 'objects are' : 'object is'
-                            } being tracked..`,
+                            content: `${tracker.name}: ${numOfObjects} ${numOfObjects > 1 ? 'objects are' : 'object is'
+                                } being tracked..`,
                             duration: 0,
                             className: 'cvat-tracking-notice',
                         });
@@ -1011,7 +1277,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
         if (!openCVWrapper.isInitialized) {
             const hide = message.loading('Initializing contour utilities..', 0);
             try {
-                await openCVWrapper.initialize(() => {});
+                await openCVWrapper.initialize(() => { });
             } catch (error: any) {
                 notification.error({
                     message: 'Could not initialize contour utilities',
