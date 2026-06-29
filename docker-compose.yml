@@ -106,6 +106,7 @@ services:
       - cvat_keys:/home/django/keys
       - cvat_logs:/home/django/logs
       - ./patches/urls.py:/home/django/cvat/urls.py
+      - ./patches/cvat-lambdaviews.py:/home/django/cvat/apps/lambda_manager/views.py
       - ./patches/iam-urls.py:/home/django/cvat/apps/iam/urls.py
       - ./settings.py:/home/django/settings.py:ro
     env_file:
