@@ -37,10 +37,8 @@ ID_BORDER_COLOR = (127,127,127,60)
 t_ID_BORDER_COLOR = "gray"
 
 ID_FONT_SIZE = 30
-MAX_RETRIES = 3
-RETRY_BACKOFF_BASE = 2.0
 id_font = ImageFont.truetype(
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", ID_FONT_SIZE
+    "./opt/nuclio/font.ttf", ID_FONT_SIZE
 )
 
 ID_PAD_X = 10  # horizontal padding inside badge
@@ -87,7 +85,7 @@ def normalize_text(text: str) -> str:
     if not text:
         return ""
     text = str(text)
-    # text = text.lower()
+    text = re.sub(r"[^\x00-\x7F]+", "", text)
     text = re.sub(r"[\n\r\t]", " ", text)
     text = re.sub(r'\s*([.,;:!?\-\(\)\[\]{}""\'])\s*', r"\1", text)
     text = re.sub(r"\s+", " ", text).strip()
@@ -210,8 +208,8 @@ async def run_validation_pipeline(
             pdown = PADDING_BOTTOM
             pleft = PADDING
 
-            tile_height = math.ceil(pup + pdown + y2 - y1) + 2 * (BORDER_WIDTH + ID_BORDER_WIDTH )
-            tile_width = math.ceil(pleft + pright + x2 - x1) + 2 * (BORDER_WIDTH + ID_BORDER_WIDTH)
+            tile_height = math.ceil(pup + pdown + y2 - y1) + (2 * (BORDER_WIDTH + ID_BORDER_WIDTH ))
+            tile_width = math.ceil(pleft + pright + x2 - x1) + (2 * (BORDER_WIDTH + ID_BORDER_WIDTH))
             tile_image = Image.new("RGBA", (tile_width, tile_height), "white")
             draw_tile = ImageDraw.Draw(tile_image)
             _ =  packer.add_rect(tile_width, tile_height, cell_id_str)
@@ -229,8 +227,8 @@ async def run_validation_pipeline(
                 [
                     BORDER_WIDTH,
                     BORDER_WIDTH,
-                    BORDER_WIDTH + tx2 - tx1 + (2*ID_BORDER_WIDTH),
-                    BORDER_WIDTH + ty2 - ty1 + (2*ID_BORDER_WIDTH)
+                    BORDER_WIDTH + (tx2 - tx1) + (2*ID_BORDER_WIDTH) -1,
+                    BORDER_WIDTH + (ty2 - ty1) + (2*ID_BORDER_WIDTH) -1
                 ],
                 fill=BG_COLOR,
                 outline=ID_BORDER_COLOR,
