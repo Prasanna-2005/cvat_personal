@@ -413,7 +413,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
 
 
         // 1. Locate the correct spec_id for the attribute named "text"
-        const textAttribute = labelInstance.attributes.find((attr: any) => attr.name === 'text');
+        const textAttribute = labelInstance.attributes.find((attr: any) => attr.name.toLowerCase().includes('text'));
         if (!textAttribute) {
             throw new Error(`Label "${labelInstance.name}" is missing a target attribute named "text".`);
         }
