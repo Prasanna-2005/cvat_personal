@@ -534,7 +534,6 @@ private buildValidatorPayload(
         if (!ToolsControlComponent.hasTextAttr(labelAttrs)) continue;
 
         const textop = ToolsControlComponent.getTextAttrValue(state);
-        if (textop == "") continue;
 
         const aabb = ToolsControlComponent.getShapeAabb(state);
         if (!aabb) continue;
@@ -543,7 +542,6 @@ private buildValidatorPayload(
         if (!ToolsControlComponent.aabbOverlaps(xtl, ytl, xbr, ybr, selXtl, selYtl, selXbr, selYbr)) continue;
 
         const pts = state.points as number[];
-        if (!pts || pts.length < 4) continue;
 
         const cellId = state.clientID;
         xDataRects[String(cellId)] = {
@@ -552,7 +550,6 @@ private buildValidatorPayload(
         };
 
         cellStateMap[cellId] = state;
-
     }
 
     return { xDataRects, cellStateMap };
@@ -582,7 +579,7 @@ private async dispatchValidatorIssues(
             xbr, ytl,
             xbr, ybr,
             xtl, ybr,
-            xtl,ytl
+            xtl, ytl
         ];
         try {
         const issue = new core.classes.Issue({
@@ -592,9 +589,8 @@ private async dispatchValidatorIssues(
         });
 
         const lltext = result.lltext ?? '';
-        if (!lltext) continue;
 
-        const savedIssue = await jobInstance.openIssue(issue, `Received ${lltext}`);
+        const savedIssue = await jobInstance.openIssue(issue, `Received "${lltext}"`);
         dispatch(reviewActions.finishIssueSuccess(frame, savedIssue));
         issueCount++;
         }
@@ -604,7 +600,7 @@ private async dispatchValidatorIssues(
     }
     if (issueCount == 0){
         notification.success({
-            message : `Validator: No issues created !!`,
+            message : `Validator: No issues created.`,
         });
     }
     if (issueCount > 0) {
@@ -639,7 +635,7 @@ private buildOcrPayload(
         if (!ToolsControlComponent.hasTextAttr(labelAttrs)) continue;
 
         const pts = state.points as number[];
-        if (!pts || pts.length < 4) continue;
+        if (!pts || pts.length < 3) continue;
 
         const aabb = ToolsControlComponent.getShapeAabb(state);
         if (!aabb) continue;
