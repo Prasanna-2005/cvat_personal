@@ -56,6 +56,7 @@ import ToolsTooltips from './interactor-tooltips';
 
 import { reviewActions, finishIssueAsync } from 'actions/review-actions';
 import { ThunkDispatch } from 'utils/redux';
+import { log } from 'console';
 
 interface StateToProps {
     canvasInstance: Canvas;
@@ -459,13 +460,15 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
     // --------------------------------------PATCH : VALIDATION---------------------
     // ─── Validator helpers ────────────────────────────────────────────────────
 
-private static readonly TEXT_ATTR_NAMES = new Set(['text', 'cell_text']);
+private static hasTextAttr(labelAttrs: { id?: number; name: string }[]): boolean {
+    return labelAttrs.some((a) => a.name.toLowerCase().includes('text'));
+}
 
 private static getTextAttrValue(state: ObjectState): string {
     const attrValues: Record<number, string> = state.attributes as Record<number, string>;
     const descriptors: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
     for (const desc of descriptors) {
-        if (ToolsControlComponent.TEXT_ATTR_NAMES.has(desc.name) && desc.id !== undefined) {
+        if (desc.name.toLowerCase().includes('text') && desc.id !== undefined) {
             return attrValues[desc.id] ?? '';
         }
     }
@@ -512,7 +515,7 @@ private static aabbOverlaps(
 private buildValidatorPayload(
     selBbox: [number, number, number, number],
 ): {
-    xDataRects: Record<string, { text: string; rects: [number, number, number, number] }>;
+    xDataRects: Record<string, { text: string; rects: number[] }>;
     cellStateMap: Record<number, ObjectState>;
 } {
     const { states, labels } = this.props;
@@ -520,34 +523,33 @@ private buildValidatorPayload(
 
     const selectedLabel = labels.find((l) => l.id === activeLabelID);
     const [selXtl, selYtl, selXbr, selYbr] = selBbox;
-    const xDataRects: Record<string, { text: string; rects: [number, number, number, number] }> = {};
+    const xDataRects: Record<string, { text: string; rects: number[] }> = {};
     const cellStateMap: Record<number, ObjectState> = {};
 
     for (const state of states){
         if (state.clientID ==  null) continue;
-
-        console.log(state);
         if (!selectedLabel || (state.label as any).id !== selectedLabel.id) continue;
 
         const labelAttrs: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
-        if (!labelAttrs.some((a) => ToolsControlComponent.TEXT_ATTR_NAMES.has(a.name))) continue;
+        if (!ToolsControlComponent.hasTextAttr(labelAttrs)) continue;
 
         const textop = ToolsControlComponent.getTextAttrValue(state);
-        if (textop == "") continue;
 
         const aabb = ToolsControlComponent.getShapeAabb(state);
         if (!aabb) continue;
 
         const [xtl, ytl, xbr, ybr] = aabb;
         if (!ToolsControlComponent.aabbOverlaps(xtl, ytl, xbr, ybr, selXtl, selYtl, selXbr, selYbr)) continue;
+
+        const pts = state.points as number[];
+
         const cellId = state.clientID;
         xDataRects[String(cellId)] = {
             text: textop,
-            rects: [xtl, ytl, xbr, ybr],
+            rects: pts,
         };
 
         cellStateMap[cellId] = state;
-
     }
 
     return { xDataRects, cellStateMap };
@@ -577,7 +579,7 @@ private async dispatchValidatorIssues(
             xbr, ytl,
             xbr, ybr,
             xtl, ybr,
-            xtl,ytl
+            xtl, ytl
         ];
         try {
         const issue = new core.classes.Issue({
@@ -587,9 +589,8 @@ private async dispatchValidatorIssues(
         });
 
         const lltext = result.lltext ?? '';
-        if (!lltext) continue;
 
-        const savedIssue = await jobInstance.openIssue(issue, `Received ${lltext}`);
+        const savedIssue = await jobInstance.openIssue(issue, `Received "${lltext}"`);
         dispatch(reviewActions.finishIssueSuccess(frame, savedIssue));
         issueCount++;
         }
@@ -599,7 +600,7 @@ private async dispatchValidatorIssues(
     }
     if (issueCount == 0){
         notification.success({
-            message : `Validator: No issues created !!`,
+            message : `Validator: No issues created.`,
         });
     }
     if (issueCount > 0) {
@@ -610,8 +611,81 @@ private async dispatchValidatorIssues(
 }
 
 // ─── End validator helpers ────────────────────────────────────────────────
+//--------------------------------PATCH - 3 : SKEW ------------------------
+private buildOcrPayload(
+    selBbox: [number, number, number, number],
+): {
+    bboxes: Record<string, number[]>;
+    cellStateMap: Record<number, ObjectState>;
+} {
+    const { states, labels } = this.props;
+    const { activeLabelID } = this.state;
+
+    const selectedLabel = labels.find((l) => l.id === activeLabelID);
+    const [selXtl, selYtl, selXbr, selYbr] = selBbox;
+
+    const bboxes: Record<string, number[]> = {};
+    const cellStateMap: Record<number, ObjectState> = {};
+
+    for (const state of states) {
+        if (state.clientID == null) continue;
+        if (!selectedLabel || (state.label as any).id !== selectedLabel.id) continue;
+
+        const labelAttrs: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
+        if (!ToolsControlComponent.hasTextAttr(labelAttrs)) continue;
+
+        const pts = state.points as number[];
+        if (!pts || pts.length < 3) continue;
+
+        const aabb = ToolsControlComponent.getShapeAabb(state);
+        if (!aabb) continue;
+
+        const [xtl, ytl, xbr, ybr] = aabb;
+        if (!ToolsControlComponent.aabbOverlaps(xtl, ytl, xbr, ybr, selXtl, selYtl, selXbr, selYbr)) continue;
+
+        // Send all raw points — flexible for both polygon and rectangle
+        // Rectangle: [x1,y1,x2,y2] → 4 values
+        // Polygon:   [x1,y1,x2,y2,...,xn,yn] → 2n values
+        bboxes[String(state.clientID)] = pts;
+        cellStateMap[state.clientID] = state;
+    }
+
+    return { bboxes, cellStateMap };
+}
 
 
+private async applyOcrResults(
+    lambdaResponse: Record<string, string>,
+    cellStateMap: Record<number, ObjectState>,
+): Promise<void> {
+    const { updateAnnotations } = this.props;
+    const updatedStates: ObjectState[] = [];
+
+    console.log(lambdaResponse);
+
+    for (const [cellIdStr, ocrText] of Object.entries(lambdaResponse)) {
+        const cellId = Number(cellIdStr);
+        const state = cellStateMap[cellId];
+        if (!state || !ocrText) continue;
+
+        const labelAttrs: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
+        const textAttr = labelAttrs.find((a) => a.name.toLowerCase().includes('text'));
+        if (!textAttr || textAttr.id == null) continue;
+
+        state.attributes = {
+            ...(state.attributes as Record<number, string>),
+            [textAttr.id]: ocrText,
+        };
+        updatedStates.push(state);
+    }
+
+    if (updatedStates.length) {
+        await updateAnnotations(updatedStates);
+        notification.success({
+            message: `OCR: updated ${updatedStates.length} annotation(s).`,
+        });
+    }
+}
     private runInteractionRequest = async (interactionId: string): Promise<void> => {
         const { jobInstance, canvasInstance } = this.props;
         const { activeInteractor, fetching } = this.state;
@@ -639,7 +713,7 @@ private async dispatchValidatorIssues(
                 this.setState({ fetching: true });
 
                 await this.initializeOpenCV();
-                // Extract selection bbox from the drawn rectangle
+                // Extract selection bbox (area of interest)
                 const rawBboxTL = data.obj_bbox?.[0]; // [x1, y1]
                 const rawBboxBR = data.obj_bbox?.[1]; // [x2, y2]
                 const selBbox: [number, number, number, number] | undefined =
@@ -647,59 +721,95 @@ private async dispatchValidatorIssues(
                         ? [rawBboxTL[0], rawBboxTL[1], rawBboxBR[0], rawBboxBR[1]]
                         : undefined;
 
-                // console.log(selBbox)
 
-                let xDataRects: Record<string, { text: string; rects: [number, number, number, number] }> = {};
-                let cellStateMap: Record<number, ObjectState> = {};
 
-                if (selBbox) {
-                    ({ xDataRects, cellStateMap } = this.buildValidatorPayload(selBbox));
-                }
+                const isValidator = typeof interactor.id === 'string' && interactor.id.toLowerCase().includes('validator');
+                const isOcr = interactor.id === 'python-external-ocr';
+                const isSkewOcr = interactor.id === 'skew-ocr';
 
-                // If this is a validator interactor but no matching annotations were found, bail early
-                if (interactor.name.toLowerCase().includes('validator') && selBbox && Object.keys(xDataRects).length === 0) {
-                    notification.warning({
+                console.log(isValidator);
+                console.log(isSkewOcr);
+                console.log(isOcr);
+
+
+
+                if (isValidator){
+                    let xDataRects: Record<string, { text: string; rects: number[] }> = {};
+                    let cellStateMap: Record<number, ObjectState> = {};
+
+                    if (selBbox){
+                        ({ xDataRects, cellStateMap } = this.buildValidatorPayload(selBbox));
+                    }
+
+                   // If this is a validator interactor but no matching annotations were found, bail early
+                   if (!selBbox || Object.keys(xDataRects).length === 0) {
+                        notification.warning({
                         message: 'Validator: no matching annotations found in selection.',
                         duration: 3,
-                    });
-                    canvasInstance.interact({ enabled: false });
-                    return;
-                }
-
-                const response = await core.lambda.call(
-                    jobInstance.taskId,
-                    interactor,
-                    {
+                        });
+                        canvasInstance.interact({ enabled: false });
+                        return;
+                    }
+                    const response = await core.lambda.call(jobInstance.taskId, interactor, {
                         ...data,
                         job: jobInstance.id,
-                        ...(selBbox && Object.keys(xDataRects).length ? { rects: xDataRects } : {}),
-                    },
-                ) as InteractorResults & Record<string, unknown>;
+                        rects: xDataRects,
+                    }) as Record<string, unknown>;
 
-                if (interactor.name.toLowerCase().includes('validator')) {
-                    await this.dispatchValidatorIssues(response as unknown as Record<string, Record<any, any>>,
-                        cellStateMap,
-                    );
+                    await this.dispatchValidatorIssues(response as Record<string, Record<any, any>>, cellStateMap);
                     canvasInstance.interact({ enabled: false });
                     return;
                 }
 
-                // --- custom code -1 ocr---
-                if (interactor.id === 'python-tesseract-ocr' || 'python-external-ocr' || interactor.name.toLowerCase().includes('ocr')) {
-                    const { activeLabelID } = this.state;
+                 else if (isSkewOcr) {
+                    let bboxes: Record<string, number[]> = {};
+                    let cellStateMap: Record<number, ObjectState> = {};
 
+                    if (selBbox) {
+                        ({ bboxes, cellStateMap } = this.buildOcrPayload(selBbox));
+                    }
+
+                    if (!selBbox || Object.keys(bboxes).length === 0) {
+                        notification.warning({ message: 'OCR: no matching annotations found in selection.', duration: 3 });
+                        canvasInstance.interact({ enabled: false });
+                        return;
+                    }
+
+                    const response = await core.lambda.call(jobInstance.taskId, interactor, {
+                        ...data,
+                        job: jobInstance.id,
+                        bboxes:bboxes
+                    }) as unknown as Record<string, string>;
+
+                    await this.applyOcrResults(response, cellStateMap);
+                    canvasInstance.interact({ enabled: false });
+                    return;
+
+                }
+
+                else if (isOcr) {
+                    const response = await core.lambda.call(jobInstance.taskId, interactor, {
+                        ...data,
+                        job: jobInstance.id,
+                    }) as InteractorResults & Record<string, unknown>;
+
+                    const { activeLabelID } = this.state;
                     const labelInstance = jobInstance.labels.find((l: any) => l.id === activeLabelID);
 
-
                     if (labelInstance) {
-                        await this.constructFromOCR(response, labelInstance, data.frame); // Passed correct 'frame' variable
+                        await this.constructFromOCR(response, labelInstance, data.frame);
                     }
 
                     // This releases the canvas without wiping shapeType prematurely
                     canvasInstance.interact({ enabled: false });
-
                     return;
                 }
+
+                const response = await core.lambda.call(jobInstance.taskId, interactor, {
+                    ...data,
+                    job: jobInstance.id,
+                }) as InteractorResults ;
+
 
                 if (this.interaction.id !== interactionId || this.interaction.isAborted) {
                     // new interaction session or the session is aborted
@@ -731,7 +841,8 @@ private async dispatchValidatorIssues(
                     interactorResponseReceived: !!latestResponse.length,
                     showConfidenceControl,
                 });
-            } finally {
+            }
+            finally {
                 if (this.interaction.id === interactionId) {
                     this.interaction.closeFetchingMessage?.();
                     this.interaction.closeFetchingMessage = null;

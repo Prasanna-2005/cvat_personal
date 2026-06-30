@@ -31,7 +31,7 @@ do
         --file "$func_config" --platform local \
         --env CVAT_FUNCTIONS_REDIS_HOST="cvat_redis_ondisk" \
         --env CVAT_FUNCTIONS_REDIS_PORT="6666" \
-        --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
+        --env FINUIT_OCR_KEY="${FINUIT_OCR_KEY}" \
         --platform-config '{"attributes": {"network": "cvat_cvat"}}'
 done
 

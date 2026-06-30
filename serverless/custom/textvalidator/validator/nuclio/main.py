@@ -9,17 +9,16 @@ from io import BytesIO
 from datetime import datetime, timezone
 from typing import Dict, Any, TypedDict
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from rectpack import newPacker, PackingMode, PackingBin
+from shapely.geometry import Polygon
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from pydantic import BaseModel, Field
 
-from dotenv import load_dotenv
-
-load_dotenv()
 
 DEFAULT_BIN_WIDTH = 1200
 DEFAULT_BIN_HEIGHT = 500
@@ -37,10 +36,8 @@ ID_BORDER_COLOR = (127,127,127,60)
 t_ID_BORDER_COLOR = "gray"
 
 ID_FONT_SIZE = 30
-MAX_RETRIES = 3
-RETRY_BACKOFF_BASE = 2.0
 id_font = ImageFont.truetype(
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", ID_FONT_SIZE
+    "./opt/nuclio/font.ttf", ID_FONT_SIZE
 )
 
 ID_PAD_X = 10  # horizontal padding inside badge
@@ -87,11 +84,51 @@ def normalize_text(text: str) -> str:
     if not text:
         return ""
     text = str(text)
-    # text = text.lower()
+    text = re.sub(r"[^\x00-\x7F]+", "", text)
     text = re.sub(r"[\n\r\t]", " ", text)
     text = re.sub(r'\s*([.,;:!?\-\(\)\[\]{}""\'])\s*', r"\1", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+def resolve_crop_region(img: Image.Image, coords: list[float]):
+    if len(coords) == 4:
+        # Plain rectangle: [x1, y1, x2, y2]
+        x1, y1, x2, y2 = coords
+        x1, y1 = math.floor(x1), math.floor(y1)
+        x2, y2 = math.ceil(x2), math.ceil(y2)
+        crop = img.crop((x1, y1, x2, y2))
+        return x1, y1, x2, y2, crop
+
+    # Polygon case: flat list of (x, y) pairs, e.g. [x1,y1,x2,y2,x3,y3,...]
+    if len(coords) < 6 or len(coords) % 2 != 0:
+        raise ValueError(
+            f"Invalid coordinate list of length {len(coords)}; expected 4 "
+            f"values for a rectangle or an even number >= 6 for a polygon."
+        )
+
+    pairs = [(coords[i], coords[i + 1]) for i in range(0, len(coords), 2)]
+    poly = Polygon(pairs)
+    minx, miny, maxx, maxy = poly.bounds
+
+    x1, y1 = math.floor(minx), math.floor(miny)
+    x2, y2 = math.ceil(maxx), math.ceil(maxy)
+
+    # Step A: Crop to bounding box using PIL first to save memory
+    region_pil = img.crop((x1, y1, x2, y2)).convert("RGBA")
+    region_np = np.array(region_pil)
+
+    # Step B: Create a binary mask using PIL Draw
+    local_coords = [(x - x1, y - y1) for x, y in pairs]
+    mask_img = Image.new("L", (region_pil.width, region_pil.height), 0)
+    ImageDraw.Draw(mask_img).polygon(local_coords, fill=255)
+    mask = np.array(mask_img)
+
+    # Step C: Apply mask via NumPy vectorization (white background outside polygon)
+    crop_np = np.where(mask[:, :, None] > 0, region_np, 255)
+    crop_pil = Image.fromarray(crop_np.astype(np.uint8))
+
+    return x1, y1, x2, y2, crop_pil
 
 
 def pil_to_base64(img: Image.Image) -> str:
@@ -191,7 +228,7 @@ async def run_validation_pipeline(
             bbox = data["rects"]
             gt_map[cell_id_str] = {"text": data["text"], "bbox": bbox}
 
-            x1, y1, x2, y2 = bbox
+            x1, y1, x2, y2, masked_crop = resolve_crop_region(img, bbox)
 
             tx1, ty1, tx2, ty2 = draw_image.textbbox(
                 (0, 0), cell_id_str, font=id_font, align="left"
@@ -210,8 +247,8 @@ async def run_validation_pipeline(
             pdown = PADDING_BOTTOM
             pleft = PADDING
 
-            tile_height = math.ceil(pup + pdown + y2 - y1) + 2 * (BORDER_WIDTH + ID_BORDER_WIDTH )
-            tile_width = math.ceil(pleft + pright + x2 - x1) + 2 * (BORDER_WIDTH + ID_BORDER_WIDTH)
+            tile_height = math.ceil(pup + pdown + y2 - y1) + (2 * (BORDER_WIDTH + ID_BORDER_WIDTH ))
+            tile_width = math.ceil(pleft + pright + x2 - x1) + (2 * (BORDER_WIDTH + ID_BORDER_WIDTH))
             tile_image = Image.new("RGBA", (tile_width, tile_height), "white")
             draw_tile = ImageDraw.Draw(tile_image)
             _ =  packer.add_rect(tile_width, tile_height, cell_id_str)
@@ -229,8 +266,8 @@ async def run_validation_pipeline(
                 [
                     BORDER_WIDTH,
                     BORDER_WIDTH,
-                    BORDER_WIDTH + tx2 - tx1 + (2*ID_BORDER_WIDTH),
-                    BORDER_WIDTH + ty2 - ty1 + (2*ID_BORDER_WIDTH)
+                    BORDER_WIDTH + (tx2 - tx1) + (2*ID_BORDER_WIDTH) -1,
+                    BORDER_WIDTH + (ty2 - ty1) + (2*ID_BORDER_WIDTH) -1
                 ],
                 fill=BG_COLOR,
                 outline=ID_BORDER_COLOR,
@@ -245,7 +282,7 @@ async def run_validation_pipeline(
             )
 
             # place the image
-            crop = img.crop((x1,y1,x2,y2))
+            crop = masked_crop
             tile_image.paste(crop, (BORDER_WIDTH + pleft, math.ceil(BORDER_WIDTH + ty2 + gap_up)))
 
         num_bins = len(cell_images)
@@ -275,6 +312,7 @@ async def run_validation_pipeline(
             canvases[bin]["canvas"].paste(cell_images[rid], (x, y))
             canvases[bin]["cell_ids"].append(rid)
             all_rids.discard(rid)
+
 
         if all_rids:
             # PANIC : Cells that didn't fit :: get single-cell canvases
