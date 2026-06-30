@@ -9,17 +9,16 @@ from io import BytesIO
 from datetime import datetime, timezone
 from typing import Dict, Any, TypedDict
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from rectpack import newPacker, PackingMode, PackingBin
+from shapely.geometry import Polygon
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from pydantic import BaseModel, Field
 
-from dotenv import load_dotenv
-
-load_dotenv()
 
 DEFAULT_BIN_WIDTH = 1200
 DEFAULT_BIN_HEIGHT = 500
@@ -90,6 +89,46 @@ def normalize_text(text: str) -> str:
     text = re.sub(r'\s*([.,;:!?\-\(\)\[\]{}""\'])\s*', r"\1", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+def resolve_crop_region(img: Image.Image, coords: list[float]):
+    if len(coords) == 4:
+        # Plain rectangle: [x1, y1, x2, y2]
+        x1, y1, x2, y2 = coords
+        x1, y1 = math.floor(x1), math.floor(y1)
+        x2, y2 = math.ceil(x2), math.ceil(y2)
+        crop = img.crop((x1, y1, x2, y2))
+        return x1, y1, x2, y2, crop
+
+    # Polygon case: flat list of (x, y) pairs, e.g. [x1,y1,x2,y2,x3,y3,...]
+    if len(coords) < 6 or len(coords) % 2 != 0:
+        raise ValueError(
+            f"Invalid coordinate list of length {len(coords)}; expected 4 "
+            f"values for a rectangle or an even number >= 6 for a polygon."
+        )
+
+    pairs = [(coords[i], coords[i + 1]) for i in range(0, len(coords), 2)]
+    poly = Polygon(pairs)
+    minx, miny, maxx, maxy = poly.bounds
+
+    x1, y1 = math.floor(minx), math.floor(miny)
+    x2, y2 = math.ceil(maxx), math.ceil(maxy)
+
+    # Step A: Crop to bounding box using PIL first to save memory
+    region_pil = img.crop((x1, y1, x2, y2)).convert("RGBA")
+    region_np = np.array(region_pil)
+
+    # Step B: Create a binary mask using PIL Draw
+    local_coords = [(x - x1, y - y1) for x, y in pairs]
+    mask_img = Image.new("L", (region_pil.width, region_pil.height), 0)
+    ImageDraw.Draw(mask_img).polygon(local_coords, fill=255)
+    mask = np.array(mask_img)
+
+    # Step C: Apply mask via NumPy vectorization (white background outside polygon)
+    crop_np = np.where(mask[:, :, None] > 0, region_np, 255)
+    crop_pil = Image.fromarray(crop_np.astype(np.uint8))
+
+    return x1, y1, x2, y2, crop_pil
 
 
 def pil_to_base64(img: Image.Image) -> str:
@@ -189,7 +228,7 @@ async def run_validation_pipeline(
             bbox = data["rects"]
             gt_map[cell_id_str] = {"text": data["text"], "bbox": bbox}
 
-            x1, y1, x2, y2 = bbox
+            x1, y1, x2, y2, masked_crop = resolve_crop_region(img, bbox)
 
             tx1, ty1, tx2, ty2 = draw_image.textbbox(
                 (0, 0), cell_id_str, font=id_font, align="left"
@@ -243,7 +282,7 @@ async def run_validation_pipeline(
             )
 
             # place the image
-            crop = img.crop((x1,y1,x2,y2))
+            crop = masked_crop
             tile_image.paste(crop, (BORDER_WIDTH + pleft, math.ceil(BORDER_WIDTH + ty2 + gap_up)))
 
         num_bins = len(cell_images)
@@ -273,6 +312,7 @@ async def run_validation_pipeline(
             canvases[bin]["canvas"].paste(cell_images[rid], (x, y))
             canvases[bin]["cell_ids"].append(rid)
             all_rids.discard(rid)
+
 
         if all_rids:
             # PANIC : Cells that didn't fit :: get single-cell canvases

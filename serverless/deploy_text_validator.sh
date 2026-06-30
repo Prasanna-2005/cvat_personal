@@ -32,7 +32,7 @@ do
         --env CVAT_FUNCTIONS_REDIS_HOST="cvat_redis_ondisk" \
         --env CVAT_FUNCTIONS_REDIS_PORT="6666" \
         --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
-        --platform-config '{"attributes": {"network": "cvat_cvat"}}'\
+        --platform-config '{"attributes": {"network": "cvat_cvat"}}'
 done
 
 nuctl get function --platform local

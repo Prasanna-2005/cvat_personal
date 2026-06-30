@@ -2,7 +2,7 @@ metadata:
   name: text-validator
   namespace: cvat
   annotations:
-    name: Text Validator
+    name: Fast QC Text Validator
     version: 2
     type: interactor
     spec:
@@ -28,7 +28,12 @@ spec:
       preCopy:
         # Install system dependencies
         - kind: RUN
-          value: pip install --no-cache-dir Pillow==11.1.0 python-dotenv==1.0.1 langchain-core==1.4.8 langchain-openai==1.3.3 langchain-google-genai==4.2.5 langchain==1.3.11 rectpack==0.2.2
+          value: pip install --no-cache-dir Pillow==11.1.0 \
+                 langchain-core==1.4.8 langchain-openai==1.3.3 \
+                 langchain-google-genai==4.2.5 \
+                 langchain==1.3.11 \
+                 rectpack==0.2.2 \
+                 numpy shapely
         - kind: WORKDIR
           value: /opt/nuclio
         - kind: ADD
