@@ -11,7 +11,7 @@ from shapely.geometry import Polygon
 from typing import Dict, List, Any
 
 
-API_KEY = os.environ.get("FINUIT_OCR_KEY", "")
+API_KEY = os.environ["FINUIT_OCR_KEY"]
 BASE_URL = "https://gocr.finuit.ai/api/v1"
 OCR_TEXT_URL = f"{BASE_URL}/ocr:text"
 
@@ -81,9 +81,6 @@ async def process_image_crops(image: Image.Image, bboxes: Dict[str, List[float]]
                     max(pts[0],pts[2]), max(pts[1],pts[3]))
                 crop_pil = image.crop(box)
 
-            # --- STRATEGY 2: Polygon Masking (Complex Path) ---
-            else:
-                
             else:               # polygon: 6,8,10,... values
                 coords = [(pts[i], pts[i+1]) for i in range(0, len(pts), 2)]
                 poly = Polygon(coords)

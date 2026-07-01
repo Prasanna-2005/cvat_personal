@@ -365,7 +365,7 @@ async def handler(context, event):
             return context.Response(
                 body=json.dumps({"error": "Missing data"}), status_code=400
             )
-        with mlflow.start_run():
+        with mlflow.start_span():
             final_results = await run_validation_pipeline(b64_image, raw_rects)
 
         return context.Response(
