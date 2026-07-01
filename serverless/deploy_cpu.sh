@@ -28,6 +28,12 @@ do
         --file "$func_config" --platform local \
         --env CVAT_FUNCTIONS_REDIS_HOST=cvat_redis_ondisk \
         --env CVAT_FUNCTIONS_REDIS_PORT=6666 \
+        --env FINUIT_OCR_KEY="${FINUIT_OCR_KEY}" \
+        --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
+        --env FINUIT_API_KEY="${FINUIT_OCR_KEY}" \
+        --env MLFLOW_TRACKING_URI="${MLFLOW_TRACKING_URI}" \
+        --env MLFLOW_TRACKING_USERNAME="${MLFLOW_TRACKING_USERNAME}" \
+        --env MLFLOW_TRACKING_PASSWORD="${MLFLOW_TRACKING_PASSWORD}" \
         --platform-config '{"attributes": {"network": "cvat_cvat"}}'
 done
 

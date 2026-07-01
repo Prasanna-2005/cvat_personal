@@ -6516,6 +6516,7 @@ __metadata:
     dayjs: "npm:^1.11.18"
     dotenv-webpack: "npm:^8.0.1"
     error-stack-parser: "npm:^2.0.6"
+    jsdiff: "npm:^1.1.1"
     json-logic-js: "npm:^2.0.2"
     mousetrap: "npm:^1.6.5"
     onnxruntime-web: "npm:1.23.2"
@@ -10104,6 +10105,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"is-equal@npm:~0.1.0":
+  version: 0.1.0
+  resolution: "is-equal@npm:0.1.0"
+  checksum: 10c0/7686109f9b61959382bcde2b01f2ea70d0fc8120ccd5a8b75b3292355a5fc0fd2add7f350d26885a7f553008ee8a5ae3e51dcbbe88be5e87d0dbd9a300b317dc
+  languageName: node
+  linkType: hard
+
 "is-extglob@npm:^2.1.1":
   version: 2.1.1
   resolution: "is-extglob@npm:2.1.1"
@@ -10708,6 +10716,15 @@ __metadata:
   version: 1.1.0
   resolution: "jsbn@npm:1.1.0"
   checksum: 10c0/4f907fb78d7b712e11dea8c165fe0921f81a657d3443dde75359ed52eb2b5d33ce6773d97985a089f09a65edd80b11cb75c767b57ba47391fee4c969f7215c96
+  languageName: node
+  linkType: hard
+
+"jsdiff@npm:^1.1.1":
+  version: 1.1.1
+  resolution: "jsdiff@npm:1.1.1"
+  dependencies:
+    is-equal: "npm:~0.1.0"
+  checksum: 10c0/3a4dea28994bd856d498b4f755e7198178a421814d48aa8e58106e4b405249845c2803212a743a1fb2c21eb4f269bc8f2f4e7d6f221ca816c1f1cf50e3d6fa8c
   languageName: node
   linkType: hard
 

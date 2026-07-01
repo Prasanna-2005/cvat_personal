@@ -74,18 +74,18 @@ async def process_image_crops(image: Image.Image, bboxes: Dict[str, List[float]]
     # Use httpx.AsyncClient for concurrent network requests
     async with httpx.AsyncClient() as client:
         for cell_id, pts in bboxes.items():
-            coords = [(pts[i], pts[i+1]) for i in range(0, len(pts) - 1, 2)]
 
-            # --- STRATEGY 1: Pure Rectangle (Fast Path) ---
-            if len(coords) == 2 or len(coords) == 4:
-                # Handle standard 2-point [x1, y1, x2, y2] format
-                x_vals = [p[0] for p in coords]
-                y_vals = [p[1] for p in coords]
-                box = (min(x_vals), min(y_vals), max(x_vals), max(y_vals))
+            if len(pts) == 4:   # exactly [x1,y1,x2,y2]
+                coords = [(pts[0], pts[1]), (pts[2], pts[3])]
+                box = (min(pts[0],pts[2]), min(pts[1],pts[3]),
+                    max(pts[0],pts[2]), max(pts[1],pts[3]))
                 crop_pil = image.crop(box)
 
             # --- STRATEGY 2: Polygon Masking (Complex Path) ---
             else:
+                
+            else:               # polygon: 6,8,10,... values
+                coords = [(pts[i], pts[i+1]) for i in range(0, len(pts), 2)]
                 poly = Polygon(coords)
                 minx, miny, maxx, maxy = poly.bounds
 

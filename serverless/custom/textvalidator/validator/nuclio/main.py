@@ -20,6 +20,11 @@ from langchain_core.rate_limiters import InMemoryRateLimiter
 from pydantic import BaseModel, Field
 
 
+import mlflow.langchain
+import mlflow
+mlflow.set_experiment("cvat_qc_automation")
+mlflow.langchain.autolog()
+
 DEFAULT_BIN_WIDTH = 1200
 DEFAULT_BIN_HEIGHT = 500
 ID_BOX_HEIGHT = 40
@@ -360,8 +365,8 @@ async def handler(context, event):
             return context.Response(
                 body=json.dumps({"error": "Missing data"}), status_code=400
             )
-
-        final_results = await run_validation_pipeline(b64_image, raw_rects)
+        with mlflow.start_run():
+            final_results = await run_validation_pipeline(b64_image, raw_rects)
 
         return context.Response(
             body=json.dumps(final_results),

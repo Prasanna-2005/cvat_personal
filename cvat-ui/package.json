@@ -5,7 +5,7 @@
   "main": "src/index.tsx",
   "scripts": {
     "build": "webpack --config ./webpack.config.js",
-    "start": "webpack serve --env API_URL=http://localhost:7000 --config ./webpack.config.js --mode=development",
+    "start": "webpack serve --env API_URL=http://localhost:8080 --config ./webpack.config.js --mode=development",
     "lint": "eslint './src/**/*.{ts,tsx}'",
     "lint:fix": "eslint './src/**/*.{ts,tsx}' --fix"
   },
@@ -43,6 +43,7 @@
     "dayjs": "^1.11.18",
     "dotenv-webpack": "^8.0.1",
     "error-stack-parser": "^2.0.6",
+    "jsdiff": "^1.1.1",
     "json-logic-js": "^2.0.2",
     "mousetrap": "^1.6.5",
     "onnxruntime-web": "1.23.2",
