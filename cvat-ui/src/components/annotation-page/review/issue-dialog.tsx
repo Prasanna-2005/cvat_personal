@@ -20,6 +20,7 @@ import CVATTooltip from 'components/common/cvat-tooltip';
 import { Issue, Comment as CommentModel } from 'cvat-core-wrapper';
 import { deleteIssueAsync } from 'actions/review-actions';
 import { useDialogPositioning } from './use-dialog-positioning';
+import { diffChars } from "diff";
 
 interface Props {
     issue: Issue;
@@ -96,6 +97,44 @@ export default function IssueDialog(props: Props): JSX.Element {
         return () => {};
     }, [ref.current]);
 
+
+
+
+    const getIssueStyle = (issue: string) => {
+        if (!issue.startsWith("ISSUE-DIFF:")) {
+            return <p>{issue}</p>;
+        }
+
+    try {
+        const payload = JSON.parse(issue.slice("ISSUE-DIFF:".length).trim());
+        
+        // Swapped diffWords for diffChars here
+        const diff = diffChars(payload.annotator, payload.llm);
+
+        return (
+            <>
+                {diff.map((part, index) => (
+                    <span
+                        key={index}
+                        style={{
+                            backgroundColor: part.added
+                                ? "#31b131" // Light green for additions
+                                : part.removed
+                                ? "#c65656" // Light red for deletions
+                                : "transparent"
+                            // textDecoration: part.removed ? "line-through" : "none",
+                        }}
+                    >
+                        {part.value}
+                    </span>
+                ))}
+            </>
+        );
+    } catch (err) {
+        return <p>{issue}</p>;
+    }
+   };
+
     const onDeleteIssue = useCallback((): void => {
         const issueNumber = typeof id === 'number' ? ` #${id}` : '';
         Modal.confirm({
@@ -123,7 +162,7 @@ export default function IssueDialog(props: Props): JSX.Element {
                     avatar={null}
                     key={_comment.id}
                     author={<Text strong>{_comment.owner ? _comment.owner.username : 'Unknown'}</Text>}
-                    content={<p>{_comment.message}</p>}
+                    content={getIssueStyle(_comment.message)}
                     datetime={(
                         <CVATTooltip title={created.format('MMMM Do YYYY')}>
                             <span>{diff}</span>

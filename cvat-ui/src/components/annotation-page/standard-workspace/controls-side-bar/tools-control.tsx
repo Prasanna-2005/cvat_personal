@@ -589,8 +589,9 @@ private async dispatchValidatorIssues(
         });
 
         const lltext = result.lltext ?? '';
+        const anntext = ToolsControlComponent.getTextAttrValue(state);
 
-        const savedIssue = await jobInstance.openIssue(issue, `Received "${lltext}"`);
+        const savedIssue = await jobInstance.openIssue(issue, `ISSUE-DIFF: {"annotator": "${anntext}","llm": "${lltext}"}`);
         dispatch(reviewActions.finishIssueSuccess(frame, savedIssue));
         issueCount++;
         }
