@@ -58,6 +58,9 @@ import { reviewActions, finishIssueAsync } from 'actions/review-actions';
 import { ThunkDispatch } from 'utils/redux';
 import { log } from 'console';
 
+import * as OcrPatch from 'patches/ocr';
+import * as ValidatorPatch from 'patches/validator';
+
 interface StateToProps {
     canvasInstance: Canvas;
     labels: Label[];
@@ -418,275 +421,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
             this.interaction.isAborted = true;
         }
     };
-     // ----------------------------------------------------------------------------------------------PATCH : OCR
 
-    private async constructFromOCR(response: any, labelInstance: any, frame: number): Promise<void> {
-        const { curZOrder, createAnnotations } = this.props;
-        const { text, bbox } = response;
-
-
-        // 1. Locate the correct spec_id for the attribute named "text"
-        const textAttribute = labelInstance.attributes.find((attr: any) => attr.name.toLowerCase().includes('text'));
-        if (!textAttribute) {
-            throw new Error(`Label "${labelInstance.name}" is missing a target attribute named "text".`);
-        }
-
-        // 2. Unpack rectangle bounds from Nuclio payload: [x1, y1, x2, y2]
-        const points = [
-            bbox[0][0], // left
-            bbox[0][1], // top
-            bbox[1][0], // right
-            bbox[1][1], // bottom
-        ];
-
-        // 3. Build canonical ObjectState using browser-layer attribute format
-        const object = new core.classes.ObjectState({
-            frame,
-            objectType: core.enums.ObjectType.SHAPE,
-            source: core.enums.Source.SEMI_AUTO,
-            label: labelInstance,
-            shapeType: core.enums.ShapeType.RECTANGLE,
-            points,
-            occluded: false,
-            zOrder: curZOrder,
-            attributes: {
-                [textAttribute.id]: text.trim()
-            },
-        });
-
-        // 4. Dispatch through CVAT's native Redux flow
-        createAnnotations([object]);
-    }
-    // --------------------------------------PATCH : VALIDATION---------------------
-    // ─── Validator helpers ────────────────────────────────────────────────────
-
-private static hasTextAttr(labelAttrs: { id?: number; name: string }[]): boolean {
-    return labelAttrs.some((a) => a.name.toLowerCase().includes('text'));
-}
-
-private static getTextAttrValue(state: ObjectState): string {
-    const attrValues: Record<number, string> = state.attributes as Record<number, string>;
-    const descriptors: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
-    for (const desc of descriptors) {
-        if (desc.name.toLowerCase().includes('text') && desc.id !== undefined) {
-            return attrValues[desc.id] ?? '';
-        }
-    }
-    return '';
-}
-
-private static getShapeAabb(
-    state: ObjectState,
-): [number, number, number, number] | null {
-    const pts = state.points as number[];
-    if (!pts || !pts.length) return null;
-
-    if (state.shapeType === ShapeType.RECTANGLE) {
-        return [pts[0], pts[1], pts[2], pts[3]];
-    }
-
-    if (state.shapeType === ShapeType.POLYGON) {
-        let minX = Infinity; let minY = Infinity;
-        let maxX = -Infinity; let maxY = -Infinity;
-        for (let i = 0; i < pts.length - 1; i += 2) {
-            const x = pts[i]; const y = pts[i + 1];
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-        }
-        return [minX, minY, maxX, maxY];
-    }
-
-    return null;
-}
-
-private static aabbOverlaps(
-    xtl: number, ytl: number, xbr: number, ybr: number,
-    selXtl: number, selYtl: number, selXbr: number, selYbr: number,
-): boolean {
-    if (xbr <= selXtl) return false;
-    if (xtl >= selXbr) return false;
-    if (ybr <= selYtl) return false;
-    if (ytl >= selYbr) return false;
-    return true;
-}
-
-private buildValidatorPayload(
-    selBbox: [number, number, number, number],
-): {
-    xDataRects: Record<string, { text: string; rects: number[] }>;
-    cellStateMap: Record<number, ObjectState>;
-} {
-    const { states, labels } = this.props;
-    const { activeLabelID } = this.state;
-
-    const selectedLabel = labels.find((l) => l.id === activeLabelID);
-    const [selXtl, selYtl, selXbr, selYbr] = selBbox;
-    const xDataRects: Record<string, { text: string; rects: number[] }> = {};
-    const cellStateMap: Record<number, ObjectState> = {};
-
-    for (const state of states){
-        if (state.clientID ==  null) continue;
-        if (!selectedLabel || (state.label as any).id !== selectedLabel.id) continue;
-
-        const labelAttrs: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
-        if (!ToolsControlComponent.hasTextAttr(labelAttrs)) continue;
-
-        const textop = ToolsControlComponent.getTextAttrValue(state);
-
-        const aabb = ToolsControlComponent.getShapeAabb(state);
-        if (!aabb) continue;
-
-        const [xtl, ytl, xbr, ybr] = aabb;
-        if (!ToolsControlComponent.aabbOverlaps(xtl, ytl, xbr, ybr, selXtl, selYtl, selXbr, selYbr)) continue;
-
-        const pts = state.points as number[];
-
-        const cellId = state.clientID;
-        xDataRects[String(cellId)] = {
-            text: textop,
-            rects: pts,
-        };
-
-        cellStateMap[cellId] = state;
-    }
-
-    return { xDataRects, cellStateMap };
-}
-
-private async dispatchValidatorIssues(
-    lambdaResponse: Record<string, Record<any, any>>,
-    cellStateMap: Record<number, ObjectState>,
-): Promise<void> {
-    const { dispatch,jobInstance,frame } = this.props;
-
-    let issueCount = 0;
-    for (const [cellIdStr, result] of Object.entries(lambdaResponse)) {
-        if (result.match) continue;
-
-
-        const cellId = Number(cellIdStr);
-        const state = cellStateMap[cellId];
-        if (!state) continue;
-
-        const aabb = ToolsControlComponent.getShapeAabb(state);
-        if (!aabb) continue;
-
-        const [xtl, ytl, xbr, ybr] = aabb;
-        const position: number[] = [
-            xtl, ytl,
-            xbr, ytl,
-            xbr, ybr,
-            xtl, ybr,
-            xtl, ytl
-        ];
-        try {
-        const issue = new core.classes.Issue({
-            job: jobInstance.id,
-            frame: frame,
-            position: position,
-        });
-
-        const lltext = result.lltext ?? '';
-        const anntext = ToolsControlComponent.getTextAttrValue(state);
-
-        const savedIssue = await jobInstance.openIssue(issue, `ISSUE-DIFF: {"annotator": "${anntext}","llm": "${lltext}"}`);
-        dispatch(reviewActions.finishIssueSuccess(frame, savedIssue));
-        issueCount++;
-        }
-        catch (error) {
-            dispatch(reviewActions.finishIssueFailed(error));
-        }
-    }
-    if (issueCount == 0){
-        notification.success({
-            message : `Validator: No issues created.`,
-        });
-    }
-    if (issueCount > 0) {
-        notification.success({
-            message: `Validator: ${issueCount} issue(s) created.`,
-        });
-    }
-}
-
-// ─── End validator helpers ────────────────────────────────────────────────
-//--------------------------------PATCH - 3 : SKEW ------------------------
-private buildOcrPayload(
-    selBbox: [number, number, number, number],
-): {
-    bboxes: Record<string, number[]>;
-    cellStateMap: Record<number, ObjectState>;
-} {
-    const { states, labels } = this.props;
-    const { activeLabelID } = this.state;
-
-    const selectedLabel = labels.find((l) => l.id === activeLabelID);
-    const [selXtl, selYtl, selXbr, selYbr] = selBbox;
-
-    const bboxes: Record<string, number[]> = {};
-    const cellStateMap: Record<number, ObjectState> = {};
-
-    for (const state of states) {
-        if (state.clientID == null) continue;
-        if (!selectedLabel || (state.label as any).id !== selectedLabel.id) continue;
-
-        const labelAttrs: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
-        if (!ToolsControlComponent.hasTextAttr(labelAttrs)) continue;
-
-        const pts = state.points as number[];
-        if (!pts || pts.length < 3) continue;
-
-        const aabb = ToolsControlComponent.getShapeAabb(state);
-        if (!aabb) continue;
-
-        const [xtl, ytl, xbr, ybr] = aabb;
-        if (!ToolsControlComponent.aabbOverlaps(xtl, ytl, xbr, ybr, selXtl, selYtl, selXbr, selYbr)) continue;
-
-        // Send all raw points — flexible for both polygon and rectangle
-        // Rectangle: [x1,y1,x2,y2] → 4 values
-        // Polygon:   [x1,y1,x2,y2,...,xn,yn] → 2n values
-        bboxes[String(state.clientID)] = pts;
-        cellStateMap[state.clientID] = state;
-    }
-
-    return { bboxes, cellStateMap };
-}
-
-
-private async applyOcrResults(
-    lambdaResponse: Record<string, string>,
-    cellStateMap: Record<number, ObjectState>,
-): Promise<void> {
-    const { updateAnnotations } = this.props;
-    const updatedStates: ObjectState[] = [];
-
-    console.log(lambdaResponse);
-
-    for (const [cellIdStr, ocrText] of Object.entries(lambdaResponse)) {
-        const cellId = Number(cellIdStr);
-        const state = cellStateMap[cellId];
-        if (!state || !ocrText) continue;
-
-        const labelAttrs: { id?: number; name: string }[] = (state.label as any).attributes ?? [];
-        const textAttr = labelAttrs.find((a) => a.name.toLowerCase().includes('text'));
-        if (!textAttr || textAttr.id == null) continue;
-
-        state.attributes = {
-            ...(state.attributes as Record<number, string>),
-            [textAttr.id]: ocrText,
-        };
-        updatedStates.push(state);
-    }
-
-    if (updatedStates.length) {
-        await updateAnnotations(updatedStates);
-        notification.success({
-            message: `OCR: updated ${updatedStates.length} annotation(s).`,
-        });
-    }
-}
     private runInteractionRequest = async (interactionId: string): Promise<void> => {
         const { jobInstance, canvasInstance } = this.props;
         const { activeInteractor, fetching } = this.state;
@@ -723,85 +458,21 @@ private async applyOcrResults(
                         : undefined;
 
 
-
                 const isValidator = typeof interactor.id === 'string' && interactor.id.toLowerCase().includes('validator');
                 const isOcr = interactor.id === 'python-external-ocr';
                 const isSkewOcr = interactor.id === 'skew-ocr';
 
-                console.log(isValidator);
-                console.log(isSkewOcr);
-                console.log(isOcr);
 
-
-
-                if (isValidator){
-                    let xDataRects: Record<string, { text: string; rects: number[] }> = {};
-                    let cellStateMap: Record<number, ObjectState> = {};
-
-                    if (selBbox){
-                        ({ xDataRects, cellStateMap } = this.buildValidatorPayload(selBbox));
-                    }
-
-                   // If this is a validator interactor but no matching annotations were found, bail early
-                   if (!selBbox || Object.keys(xDataRects).length === 0) {
-                        notification.warning({
-                        message: 'Validator: no matching annotations found in selection.',
-                        duration: 3,
-                        });
-                        canvasInstance.interact({ enabled: false });
-                        return;
-                    }
-                    const response = await core.lambda.call(jobInstance.taskId, interactor, {
-                        ...data,
-                        job: jobInstance.id,
-                        rects: xDataRects,
-                    }) as Record<string, unknown>;
-
-                    await this.dispatchValidatorIssues(response as Record<string, Record<any, any>>, cellStateMap);
+                if (isValidator) {
+                    await ValidatorPatch.handleValidatorInteraction(this, interactor, data, selBbox);
                     canvasInstance.interact({ enabled: false });
                     return;
-                }
-
-                 else if (isSkewOcr) {
-                    let bboxes: Record<string, number[]> = {};
-                    let cellStateMap: Record<number, ObjectState> = {};
-
-                    if (selBbox) {
-                        ({ bboxes, cellStateMap } = this.buildOcrPayload(selBbox));
-                    }
-
-                    if (!selBbox || Object.keys(bboxes).length === 0) {
-                        notification.warning({ message: 'OCR: no matching annotations found in selection.', duration: 3 });
-                        canvasInstance.interact({ enabled: false });
-                        return;
-                    }
-
-                    const response = await core.lambda.call(jobInstance.taskId, interactor, {
-                        ...data,
-                        job: jobInstance.id,
-                        bboxes:bboxes
-                    }) as unknown as Record<string, string>;
-
-                    await this.applyOcrResults(response, cellStateMap);
+                } else if (isSkewOcr) {
+                    await OcrPatch.handleSkewOcrInteraction(this, interactor, data, selBbox);
                     canvasInstance.interact({ enabled: false });
                     return;
-
-                }
-
-                else if (isOcr) {
-                    const response = await core.lambda.call(jobInstance.taskId, interactor, {
-                        ...data,
-                        job: jobInstance.id,
-                    }) as InteractorResults & Record<string, unknown>;
-
-                    const { activeLabelID } = this.state;
-                    const labelInstance = jobInstance.labels.find((l: any) => l.id === activeLabelID);
-
-                    if (labelInstance) {
-                        await this.constructFromOCR(response, labelInstance, data.frame);
-                    }
-
-                    // This releases the canvas without wiping shapeType prematurely
+                } else if (isOcr) {
+                    await OcrPatch.handleOcrInteraction(this, interactor, data);
                     canvasInstance.interact({ enabled: false });
                     return;
                 }
