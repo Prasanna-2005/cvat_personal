@@ -1,6 +1,8 @@
 #!/bin/bash
 # Sample commands to deploy nuclio functions on CPU
-
+set -a
+source .env
+set +a
 set -eu
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -34,7 +36,7 @@ do
         --env MLFLOW_TRACKING_URI="${MLFLOW_TRACKING_URI}" \
         --env MLFLOW_TRACKING_USERNAME="${MLFLOW_TRACKING_USERNAME}" \
         --env MLFLOW_TRACKING_PASSWORD="${MLFLOW_TRACKING_PASSWORD}" \
-        --platform-config '{"attributes": {"network": "cvat_cvat"}}'
+        --platform-config '{"attributes": {"network": "cvat_cvat"}}' 
 done
 
 nuctl get function --platform local
