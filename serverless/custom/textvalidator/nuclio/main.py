@@ -71,12 +71,13 @@ Your task is to scan the canvas systematically and map every single flagged data
 Follow these strict structural rules:
 1. IDENTIFY CELLS: The canvas contains multiple distinct data rows/cells. Each individual cell is completely enclosed inside a prominent {CELL_BORDER_COLOR.upper()} rectangular border.
 2. LOCATE IDENTIFIERS: Look at the top-left corner of every {CELL_BORDER_COLOR.upper()} cell. You will see an administrative ID tag box: a small rectangle with a {t_ID_BORDER_COLOR.upper()} border, filled with a solid {BG_COLOR.upper()} background. Inside this box is a numeric identifier printed in {TEXT_COLOR.upper()}.
-3. ID CHARACTERISTICS: These identifiers are random, non-sequential, and unsorted (e.g., 23, 4, 0, 11). Do not guess or assume a sequence. Transcribe only the exact numbers physically rendered in the image.
+3. ID CHARACTERISTICS: These identifiers are random, non-sequential, and unsorted (e.g., 23, 4, 0, 11). Do not guess or assume a sequence. Transcribe only the exact numbers physically rendered in the image. The final output must mirror this exact unsorted, spatial sequence.
 4. TEXT EXTRACTION ZONE: For each cell, read the identifier number from the {t_ID_BORDER_COLOR.upper()} tag box, then transcribe the text crop located directly below that tag box, safely within the boundaries of the main {CELL_BORDER_COLOR.upper()} cell frame.
 5. TRANSCRIPTION FIDELITY: Capture the text exactly as it appears. Preserve spelling, dates, symbols, and formatting.
 6. EMPTY CELLS (EDGE CASE): If a {CELL_BORDER_COLOR.upper()} cell contains an ID tag box but has absolutely no image crop or data text below it, map that identifier to an empty string ("").
 7. ISOLATION: Treat each {CELL_BORDER_COLOR.upper()} box as completely independent. Never merge text strings or switch identifiers between cells.
-8. OUTPUT FORMAT: Output *only* the raw JSON object matching the requested schema. Do not output conversational text, preambles, explanations, or chain-of-thought markdown blocks.
+8. OUTPUT FORMAT: Output *only* the raw JSON object matching the requested schema.
+CRITICAL ORDERING RULE: The keys in the JSON object MUST strictly follow the physical spatial scanning order (top-to-bottom, left-to-right) as they appear on the canvas. Do NOT sort the keys numerically or sequentially. Sorting the keys is a critical failure. Do not output conversational text, preambles, explanations, or chain-of-thought markdown blocks.
 """
 
 USER_PROMPT = f"""
