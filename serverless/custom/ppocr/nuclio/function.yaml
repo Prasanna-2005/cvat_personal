@@ -26,7 +26,7 @@ spec:
     directives:
       preCopy:
         - kind: RUN
-          value: pip install --no-cache-dir requests Pillow
+          value: pip install uv && uv pip install --system --no-cache-dir requests Pillow
         - kind: WORKDIR
           value: /opt/nuclio
 

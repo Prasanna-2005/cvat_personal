@@ -1,0 +1,50 @@
+metadata:
+  name: layout-extractor
+  namespace: cvat
+  annotations:
+    name: Layout Extractor
+    version: 2
+    type: detector
+    spec: |
+      [
+        { "id": 0, "name": "table", "type": "rectangle" },
+        { "id": 1, "name": "footer", "type": "rectangle" },
+        { "id": 2, "name": "figure_title", "type": "rectangle" },
+        { "id": 3, "name": "header", "type": "rectangle" },
+        { "id": 4, "name": "table data", "type": "rectangle" }
+      ]
+
+spec:
+  description: Table & table-cell layout detection
+  runtime: 'python:3.11'
+  handler: main:handler
+  eventTimeout: 60s
+  env:
+    - name: PYTHONPATH
+      value: /opt/nuclio
+
+  build:
+    image: cvat.custom.layout-extractor
+    baseImage: python:3.11-slim
+
+    directives:
+      preCopy:
+        - kind: RUN
+          value: pip install --no-cache-dir requests Pillow
+        - kind: WORKDIR
+          value: /opt/nuclio
+
+  triggers:
+    myHttpTrigger:
+      numWorkers: 2
+      kind: 'http'
+      workerAvailabilityTimeoutMilliseconds: 10000
+      attributes:
+        maxRequestBodySize: 33554432 # 32MB
+
+  platform:
+    attributes:
+      restartPolicy:
+        name: always
+        maximumRetryCount: 3
+      mountMode: volume
