@@ -24,6 +24,7 @@ import { Row, Col } from 'antd/lib/grid';
 import notification from 'antd/lib/notification';
 import message from 'antd/lib/message';
 import Switch from 'antd/lib/switch';
+import InputNumber from 'antd/lib/input-number';
 import lodash from 'lodash';
 
 import { AIToolsIcon } from 'icons';
@@ -60,6 +61,8 @@ import { log } from 'console';
 
 import * as OcrPatch from 'patches/ocr';
 import * as ValidatorPatch from 'patches/validator';
+import * as ClearPatch from 'patches/clear';
+import * as PropagatePatch from 'patches/propagate';
 
 interface StateToProps {
     canvasInstance: Canvas;
@@ -187,6 +190,7 @@ interface State {
     thresholdValue: number;
     mode: 'detection' | 'interaction' | 'tracking';
     portals: React.ReactPortal[];
+    propagateFrameCount: number;
 }
 
 type DetectorResults = Extract<
@@ -292,6 +296,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
             showConfidenceControl: false,
             mode: 'interaction',
             portals: [],
+            propagateFrameCount: 1,
         };
 
         this.interaction = {
@@ -462,9 +467,22 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                 const isFastQC2 = interactor.id === 'text-validator-gflash';
                 const isOcr = interactor.id === 'python-external-ocr';
                 const isSkewOcr = interactor.id === 'skew-ocr';
+                const isPropagate = interactor.id === 'frontend-propagate'
+                const isClear = interactor.id === 'frontend-clear';
+                const isNumberPopulator = interactor.id === 'number-populator';
 
-
-                if (isValidator) {
+                if (isClear) {
+                    await ClearPatch.handleClearInteraction(this, interactor, data, selBbox);
+                    canvasInstance.interact({ enabled: false });
+                    return;
+                } else if (isPropagate) {
+                    const { propagateFrameCount } = this.state;
+                    await PropagatePatch.handlePropagateInteraction(
+                        this, interactor, data, selBbox, propagateFrameCount,
+                    );
+                    canvasInstance.interact({ enabled: false });
+                    return;
+                } else if (isValidator) {
                     if (isFastQC2) {
                         await ValidatorPatch.cleanupDiffIssues(this, selBbox);
                     }
@@ -1300,6 +1318,29 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                         </div>
                     )}
                 </div>
+                {activeInteractor?.id === 'frontend-propagate' && (
+                    <div style={{ marginTop: 8, padding: '0 4px' }}>
+                        <Row align='middle' justify='start'>
+                            <Col>
+                                <Text className='cvat-text-color'>Frames to propagate</Text>
+                            </Col>
+                        </Row>
+                        <Row justify='center'>
+                            <Col span={24}>
+                                <InputNumber
+                                    min={1}
+                                    value={this.state.propagateFrameCount}
+                                    onChange={(value) => {
+                                        if (value !== null && value >= 1) {
+                                            this.setState({ propagateFrameCount: value });
+                                        }
+                                    }}
+                                    style={{ width: '100%' }}
+                                />
+                            </Col>
+                        </Row>
+                    </div>
+                )}
                 <div className='cvat-tools-interactor-extras'>
                     {renderedInteractorExtras}
                 </div>
@@ -1445,6 +1486,9 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
     }
 
     private renderPopoverContent(): JSX.Element {
+        const { activeInteractor } = this.state;
+        const activeInteractorId = activeInteractor?.id ?? '';
+        const isclear_or_propagate = activeInteractorId === 'frontend-clear' || activeInteractorId === 'frontend-propagate';
         return (
             <div className='cvat-tools-control-popover-content'>
                 <Row justify='start'>
@@ -1462,7 +1506,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                         label: 'Interactors',
                         children: (
                             <>
-                                {this.renderLabelBlock()}
+                                {!isclear_or_propagate && this.renderLabelBlock()}
                                 {this.renderInteractorBlock()}
                             </>
                         ),
