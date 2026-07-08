@@ -459,11 +459,15 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
 
 
                 const isValidator = typeof interactor.id === 'string' && interactor.id.toLowerCase().includes('validator');
+                const isFastQC2 = interactor.id === 'text-validator-gflash';
                 const isOcr = interactor.id === 'python-external-ocr';
                 const isSkewOcr = interactor.id === 'skew-ocr';
 
 
                 if (isValidator) {
+                    if (isFastQC2) {
+                        await ValidatorPatch.cleanupDiffIssues(this, selBbox);
+                    }
                     await ValidatorPatch.handleValidatorInteraction(this, interactor, data, selBbox);
                     canvasInstance.interact({ enabled: false });
                     return;

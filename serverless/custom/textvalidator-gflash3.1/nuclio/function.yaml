@@ -1,8 +1,8 @@
 metadata:
-  name: text-validator
+  name: text-validator-gflash
   namespace: cvat
   annotations:
-    name: Fast QC 1 (GEMMA-4-26B-A4B-it)
+    name: Fast QC 2 (FLASH-LITE-3.1)
     version: 2
     type: interactor
     spec:
@@ -44,7 +44,7 @@ spec:
       workerAvailabilityTimeoutMilliseconds: 10000
       attributes:
         maxRequestBodySize: 33554432 # 32MB
-        port: 32000
+        port: 32001
 
   platform:
     attributes:

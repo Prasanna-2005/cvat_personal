@@ -111,6 +111,63 @@ export async function dispatchValidatorIssues(
     }
 }
 
+export async function cleanupDiffIssues(
+    ctx: OcrPatchContext,
+    selBbox: [number, number, number, number] | undefined,
+    prefix = 'ISSUE-DIFF',
+): Promise<void> {
+    const { dispatch, jobInstance, frame } = ctx.props;
+
+    try {
+        const allIssues = await jobInstance.issues();
+        console.log(allIssues);
+        const frameIssues = allIssues.filter((issue) => issue.frame === frame);
+
+        const targeted = frameIssues.filter((issue) => {
+            const hasDiffComment = issue.comments.some(
+                (c) => typeof c.message === 'string' && c.message.startsWith(prefix),
+            );
+            if (issue.resolved === true) return false;
+            if (!hasDiffComment) return false;
+            if (!selBbox) return true;
+            const pts = issue.position ?? [];
+            if (!pts.length) return true;
+
+            let minX = Infinity; let minY = Infinity;
+            let maxX = -Infinity; let maxY = -Infinity;
+            for (let i = 0; i < pts.length; i += 2) {
+                const x = pts[i]; const y = pts[i + 1];
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+            }
+
+            const [selXtl, selYtl, selXbr, selYbr] = selBbox;
+            return aabbOverlaps(minX, minY, maxX, maxY, selXtl, selYtl, selXbr, selYbr);
+        });
+
+        let deletedCount = 0;
+        for (const issue of targeted) {
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                await issue.delete();
+                dispatch(reviewActions.removeIssueSuccess(issue.id as number, frame));
+                deletedCount += 1;
+            } catch (error) {
+                dispatch(reviewActions.removeIssueFailed(error));
+            }
+        }
+
+        if (deletedCount > 0) {
+            notification.info({
+                message: `Fast QC 2: cleared ${deletedCount} previous issue(s) before re-validating.`,
+            });
+        }
+    } catch (error) {
+        notification.error({ message: 'Fast QC 2: failed to clean up previous issues.' });
+    }
+}
 
 
 export async function handleValidatorInteraction(
