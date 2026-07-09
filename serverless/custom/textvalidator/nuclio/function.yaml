@@ -2,7 +2,7 @@ metadata:
   name: text-validator
   namespace: cvat
   annotations:
-    name: Fast QC Text Validator
+    name: Fast QC 1 (GEMMA-4-26B-A4B-it)
     version: 2
     type: interactor
     spec:

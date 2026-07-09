@@ -2,7 +2,7 @@ metadata:
   name: python-external-ocr
   namespace: cvat
   annotations:
-    name: Finuit API OCR
+    name: Finuit API OCR (Paddle OCR)
     version: 2
     type: interactor
     min_pos_points: 0
