@@ -61,6 +61,7 @@ import { log } from 'console';
 
 import * as OcrPatch from 'patches/ocr';
 import * as ValidatorPatch from 'patches/validator';
+import * as ClearPatch from 'patches/clear';
 import * as PropagatePatch from 'patches/propagate';
 
 interface StateToProps {
@@ -467,6 +468,12 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                 const isOcr = interactor.id === 'python-external-ocr';
                 const isSkewOcr = interactor.id === 'skew-ocr';
                 const isPropagate = interactor.id === 'frontend-propagate'
+                const isClear = interactor.id === 'frontend-clear';
+
+                if (isClear) {
+                    await ClearPatch.handleClearInteraction(this, interactor, data, selBbox);
+                    canvasInstance.interact({ enabled: false });
+                    return;
                 } else if (isPropagate) {
                     const { propagateFrameCount } = this.state;
                     await PropagatePatch.handlePropagateInteraction(
