@@ -73,10 +73,19 @@ function aabbOverlaps(
     return true;
 }
 
+function strictAabbOverlap(
+    xtl: number, ytl: number, xbr: number, ybr: number,
+    selXtl: number, selYtl: number, selXbr: number, selYbr: number,
+): boolean {
+    // Object must be fully contained within the selection
+    return xtl >= selXtl && ytl >= selYtl && xbr <= selXbr && ybr <= selYbr;
+}
+
 export type { OcrPatchContext };
 export {
     hasTextAttr,
     getTextAttrValue,
     getShapeAabb,
     aabbOverlaps,
+    strictAabbOverlap,
 }

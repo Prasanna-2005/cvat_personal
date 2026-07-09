@@ -56,7 +56,18 @@ class LambdaManager {
             );
         }
 
-        return { models, count: lambdaFunctions.length };
+        //Register frontend-only "Propagate" interactor (no backend/Nuclio invocation)
+        models.push(
+            new MLModel({
+                id: 'frontend-propagate',
+                name: 'Propagate',
+                kind: ModelKind.INTERACTOR,
+                description: 'Propagate all annotations within the ROI to N frames forward',
+                version: 2,
+                startswith_box: true,
+            }),
+        );
+        return { models, count: models.length };
     }
 
     async run(taskID: number, model: MLModel, args: any): Promise<SerializedFunctionRequest> {
