@@ -2,7 +2,7 @@ metadata:
   name: layout-extractor
   namespace: cvat
   annotations:
-    name: Layout Extractor
+    name: Layout Extractor (Paddle OCR)
     version: 2
     type: detector
     spec: |

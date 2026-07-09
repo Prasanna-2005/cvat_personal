@@ -2,7 +2,7 @@ metadata:
   name: skew-ocr
   namespace: cvat
   annotations:
-    name: Skew API OCR
+    name: Skew API OCR (Paddle OCR)
     version: 2
     type: interactor
     min_pos_points: 0
