@@ -217,18 +217,18 @@ function populateNumbers(
         lineGroups[matchedIdx].push(sub);
     }
 
-    // ---- Step 5: populate sub_block_no, row by row
-    for (const group of lineGroups) {
-        if (!group.length) continue;
-        group.sort((a, b) => a.aabb[0] - b.aabb[0]); // left -> right (effective X)
+    // // ---- Step 5: populate sub_block_no, row by row
+    // for (const group of lineGroups) {
+    //     if (!group.length) continue;
+    //     group.sort((a, b) => a.aabb[0] - b.aabb[0]); // left -> right (effective X)
 
-        group.forEach((sub, idx) => {
-            const subNoAttrId = findAttrId(getLabelAttrs(sub.state), 'sub_block_no');
-            if (subNoAttrId !== null) {
-                setAttrValue(sub.state, subNoAttrId, idx % 2 === 0 ? '1' : '2');
-            }
-        });
-    }
+    //     group.forEach((sub, idx) => {
+    //         const subNoAttrId = findAttrId(getLabelAttrs(sub.state), 'sub_block_no');
+    //         if (subNoAttrId !== null) {
+    //             setAttrValue(sub.state, subNoAttrId, idx % 2 === 0 ? '1' : '2');
+    //         }
+    //     });
+    // }
 
     const updated: ObjectState[] = [blockState, ...lines.map((l) => l.state), ...subBlocks.map((s) => s.state)];
 
