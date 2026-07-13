@@ -63,6 +63,7 @@ import * as OcrPatch from 'patches/ocr';
 import * as ValidatorPatch from 'patches/validator';
 import * as ClearPatch from 'patches/clear';
 import * as PropagatePatch from 'patches/propagate';
+import * as IdGenPatch from 'patches/idgen';
 
 interface StateToProps {
     canvasInstance: Canvas;
@@ -469,6 +470,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                 const isSkewOcr = interactor.id === 'skew-ocr';
                 const isPropagate = interactor.id === 'frontend-propagate'
                 const isClear = interactor.id === 'frontend-clear';
+                const isNumberPopulator = interactor.id === 'number-populator';
 
                 if (isClear) {
                     await ClearPatch.handleClearInteraction(this, interactor, data, selBbox);
@@ -494,6 +496,10 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                     return;
                 } else if (isOcr) {
                     await OcrPatch.handleOcrInteraction(this, interactor, data);
+                    canvasInstance.interact({ enabled: false });
+                    return;
+                } else if (isNumberPopulator) {
+                    await IdGenPatch.handleNumberPopulatorInteraction(this, interactor, data, selBbox);
                     canvasInstance.interact({ enabled: false });
                     return;
                 }

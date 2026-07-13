@@ -78,6 +78,17 @@ class LambdaManager {
                 startswith_box: true,
             }),
         );
+
+        models.push(
+            new MLModel({
+                id: 'number-populator',
+                name: 'ID GENERATOR',
+                kind: ModelKind.INTERACTOR,
+                description: 'Populate numbering attributes',
+                version: 2,
+                startswith_box: true,
+            }),
+        );
         return { models, count: models.length };
     }
 
