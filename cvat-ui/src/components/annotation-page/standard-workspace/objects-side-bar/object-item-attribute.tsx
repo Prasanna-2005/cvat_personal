@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Col } from 'antd/lib/grid';
 import Select from 'antd/lib/select';
+import Button from 'antd/lib/button';
 import Radio, { RadioChangeEvent } from 'antd/lib/radio';
 import Checkbox, { CheckboxChangeEvent } from 'antd/lib/checkbox';
 import InputNumber from 'antd/lib/input-number';
@@ -22,6 +23,7 @@ interface Props {
     attrName: string;
     attrID: number;
     changeAttribute(attrID: number, value: string): void;
+    onCreateExcel?(attrID: number): void;
 }
 
 function attrIsTheSame(prevProps: Props, nextProps: Props): boolean {
@@ -40,13 +42,14 @@ function attrIsTheSame(prevProps: Props, nextProps: Props): boolean {
 function ItemAttributeComponent(props: Props): JSX.Element {
     const {
         attrInputType, attrValues, attrValue,
-        attrName, attrID, readonly, changeAttribute,
+        attrName, attrID, readonly, changeAttribute, onCreateExcel,
     } = props;
 
     const attrNameStyle: React.CSSProperties = { wordBreak: 'break-word', lineHeight: '1em', fontSize: 12 };
     const ref = useRef<TextAreaRef>(null);
     const [selectionStart, setSelectionStart] = useState<number>(attrValue.length);
     const [localAttrValue, setAttributeValue] = useState(attrValue);
+    const [excelLoading, setExcelLoading] = useState(false);
 
     useEffect(() => {
         // attribute value updated from inside the app (for example undo/redo)
@@ -177,6 +180,53 @@ function ItemAttributeComponent(props: Props): JSX.Element {
         );
     }
 
+    // For excel_link attributes, render Create/Open buttons instead of a text area
+    if (attrName === 'excel_link') {
+        return (
+            <>
+                <Col span={8} style={attrNameStyle}>
+                    <Text className='cvat-text'>{attrName}</Text>
+                </Col>
+                <Col span={16}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', height: '100%' }}>
+                        {!localAttrValue ? (
+                            <Button
+                                type='primary'
+                                size='small'
+                                disabled={readonly || excelLoading}
+                                loading={excelLoading}
+                                className='cvat-object-item-create-excel-button'
+                                onClick={async () => {
+                                    if (onCreateExcel) {
+                                        setExcelLoading(true);
+                                        try {
+                                            await onCreateExcel(attrID);
+                                        } finally {
+                                            setExcelLoading(false);
+                                        }
+                                    }
+                                }}
+                            >
+                                Create
+                            </Button>
+                        ) : (
+                            <Button
+                                type='default'
+                                size='small'
+                                className='cvat-object-item-open-excel-button'
+                                onClick={() => {
+                                    window.open(localAttrValue, '_blank', 'noopener,noreferrer');
+                                }}
+                            >
+                                Open
+                            </Button>
+                        )}
+                    </div>
+                </Col>
+            </>
+        );
+    }
+
     return (
         <>
             <Col span={8} style={attrNameStyle}>
@@ -206,3 +256,4 @@ function ItemAttributeComponent(props: Props): JSX.Element {
 }
 
 export default React.memo(ItemAttributeComponent, attrIsTheSame);
+

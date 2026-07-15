@@ -1251,6 +1251,10 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                 <Component targetProps={this.props} targetState={this.state} key={index} />
             ));
 
+        const validInteractors = interactors.filter((i: MLModel) => i.id !== "template-duplicator");
+        const firstId = validInteractors[0]?.id;
+        const defaultVal = firstId !== undefined ? String(firstId) : undefined;
+
         return (
             <>
                 <Row justify='start'>
@@ -1262,20 +1266,20 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                     <Col span={22}>
                         <Select
                             style={{ width: '100%' }}
-                            defaultValue={interactors[0].name}
+                            defaultValue={defaultVal}
                             onChange={this.setActiveInteractor}
                         >
-                            {interactors.map(
-                                (interactor: MLModel): JSX.Element => (
+                            {validInteractors.map((interactor: MLModel): JSX.Element | null =>
+                                interactor.id !== "template-duplicator" ? (
                                     <Select.Option
-                                        value={interactor.id}
-                                        title={interactor.description}
-                                        key={interactor.id}
+                                    value={interactor.id}
+                                    title={interactor.description}
+                                    key={interactor.id}
                                     >
-                                        {interactor.name}
+                                    {interactor.name}
                                     </Select.Option>
-                                ),
-                            )}
+                                ) : null
+                                )}
                         </Select>
                     </Col>
                     <Col span={2} className='cvat-interactors-tips-icon-container'>
@@ -1293,6 +1297,30 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                         </Popover>
                     </Col>
                 </Row>
+                {activeInteractor?.id === 'frontend-propagate' && (
+                    <div style={{ marginTop: 8, padding: '0 4px' }}>
+                        <Row align='middle' justify='start'>
+                            <Col>
+                                <Text className='cvat-text-color'>Frames to propagate</Text>
+                            </Col>
+                        </Row>
+                        <Row justify='center'>
+                            <Col span={24}>
+                                <InputNumber
+                                    min={1}
+                                    value={this.state.propagateFrameCount}
+                                    onChange={(value) => {
+                                        if (value !== null && value >= 1) {
+                                            this.setState({ propagateFrameCount: value });
+                                        }
+                                    }}
+                                    style={{ width: '100%' }}
+                                />
+                            </Col>
+                        </Row>
+                    </div>
+                )}
+
                 <div className='cvat-tools-interactor-setups'>
                     <div>
                         <Switch
@@ -1317,29 +1345,8 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                         </div>
                     )}
                 </div>
-                {activeInteractor?.id === 'frontend-propagate' && (
-                    <div style={{ marginTop: 8, padding: '0 4px' }}>
-                        <Row align='middle' justify='start'>
-                            <Col>
-                                <Text className='cvat-text-color'>Frames to propagate</Text>
-                            </Col>
-                        </Row>
-                        <Row justify='center'>
-                            <Col span={24}>
-                                <InputNumber
-                                    min={1}
-                                    value={this.state.propagateFrameCount}
-                                    onChange={(value) => {
-                                        if (value !== null && value >= 1) {
-                                            this.setState({ propagateFrameCount: value });
-                                        }
-                                    }}
-                                    style={{ width: '100%' }}
-                                />
-                            </Col>
-                        </Row>
-                    </div>
-                )}
+
+
                 <div className='cvat-tools-interactor-extras'>
                     {renderedInteractorExtras}
                 </div>

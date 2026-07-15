@@ -1,0 +1,45 @@
+metadata:
+  name: template-duplicator
+  namespace: cvat
+  annotations:
+    name: Sheets Template Duplicator
+    version: 2
+    type: interactor
+    min_pos_points: 0
+    min_neg_points: -1
+    startswith_box: true
+
+spec:
+  description: Duplicate the Google Sheets template
+  runtime: 'python:3.11'
+  handler: main:handler
+  eventTimeout: 120s
+  env:
+    - name: PYTHONPATH
+      value: /opt/nuclio
+
+  build:
+    image: cvat.python.template.duplicator
+    baseImage: python:3.11-slim
+
+    directives:
+      preCopy:
+        - kind: RUN
+          value: pip install uv && uv pip install --system --no-cache-dir requests google-api-python-client google-auth-httplib2 google-auth-oauthlib
+        - kind: WORKDIR
+          value: /opt/nuclio
+
+  triggers:
+    myHttpTrigger:
+      numWorkers: 2
+      kind: 'http'
+      workerAvailabilityTimeoutMilliseconds: 10000
+      attributes:
+        maxRequestBodySize: 33554432 # 32MB
+
+  platform:
+    attributes:
+      restartPolicy:
+        name: always
+        maximumRetryCount: 3
+      mountMode: volume
