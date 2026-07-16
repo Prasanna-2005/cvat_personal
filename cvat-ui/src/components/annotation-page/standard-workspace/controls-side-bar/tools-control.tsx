@@ -63,6 +63,7 @@ import * as OcrPatch from 'patches/ocr';
 import * as ValidatorPatch from 'patches/validator';
 import * as ClearPatch from 'patches/clear';
 import * as PropagatePatch from 'patches/propagate';
+import * as SheetPopulatorPatch from 'patches/sheetPopulator';
 
 interface StateToProps {
     canvasInstance: Canvas;
@@ -191,6 +192,8 @@ interface State {
     mode: 'detection' | 'interaction' | 'tracking';
     portals: React.ReactPortal[];
     propagateFrameCount: number;
+    sheetPopulatorTasks: string[];
+    selectedSheetTask: string | undefined;
 }
 
 type DetectorResults = Extract<
@@ -282,10 +285,15 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
 
         const supportedTrackers = this.getSupportedTrackers();
 
+        const initialInteractor = props.interactors.length ? props.interactors[0] : null;
+        const sheetPopTasks = initialInteractor?.id === 'sheet-populator'
+            ? SheetPopulatorPatch.parseSheetTasks(initialInteractor.description)
+            : [];
+
         this.state = {
             convertMasksToPolygons: false,
             startInteractingWithBox: (localStorage.getItem(startWithBoxStorageItem) ?? 'true') === 'true',
-            activeInteractor: props.interactors.length ? props.interactors[0] : null,
+            activeInteractor: initialInteractor,
             activeTracker: supportedTrackers.length ? supportedTrackers[0] : null,
             activeLabelID: props.labels.length ? props.labels[0].id as number : null,
             approxPolyAccuracy: props.defaultApproxPolyAccuracy,
@@ -297,6 +305,8 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
             mode: 'interaction',
             portals: [],
             propagateFrameCount: 1,
+            sheetPopulatorTasks: sheetPopTasks,
+            selectedSheetTask: undefined,
         };
 
         this.interaction = {
@@ -469,6 +479,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                 const isSkewOcr = interactor.id === 'skew-ocr';
                 const isPropagate = interactor.id === 'frontend-propagate'
                 const isClear = interactor.id === 'frontend-clear';
+                const isSheetPopulator = interactor.id === 'sheet-populator';
 
                 if (isClear) {
                     await ClearPatch.handleClearInteraction(this, interactor, data, selBbox);
@@ -478,6 +489,18 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                     const { propagateFrameCount } = this.state;
                     await PropagatePatch.handlePropagateInteraction(
                         this, interactor, data, selBbox, propagateFrameCount,
+                    );
+                    canvasInstance.interact({ enabled: false });
+                    return;
+                } else if (isSheetPopulator) {
+                    const { selectedSheetTask } = this.state;
+                    if (!selectedSheetTask) {
+                        notification.warning({ message: 'Please select an AI task before drawing.' });
+                        canvasInstance.interact({ enabled: false });
+                        return;
+                    }
+                    await SheetPopulatorPatch.handleSheetPopulatorInteraction(
+                        this, interactor, data, selBbox, selectedSheetTask,
                     );
                     canvasInstance.interact({ enabled: false });
                     return;
@@ -501,7 +524,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                 const response = await core.lambda.call(jobInstance.taskId, interactor, {
                     ...data,
                     job: jobInstance.id,
-                }) as InteractorResults ;
+                }) as InteractorResults;
 
 
                 if (this.interaction.id !== interactionId || this.interaction.isAborted) {
@@ -721,6 +744,10 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
 
         this.setState({
             activeInteractor: interactor,
+            sheetPopulatorTasks: interactor.id === 'sheet-populator'
+                ? SheetPopulatorPatch.parseSheetTasks(interactor.description)
+                : [],
+            selectedSheetTask: undefined,
         });
     };
 
@@ -1272,14 +1299,14 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                             {validInteractors.map((interactor: MLModel): JSX.Element | null =>
                                 interactor.id !== "template-duplicator" ? (
                                     <Select.Option
-                                    value={interactor.id}
-                                    title={interactor.description}
-                                    key={interactor.id}
+                                        value={interactor.id}
+                                        title={interactor.description}
+                                        key={interactor.id}
                                     >
-                                    {interactor.name}
+                                        {interactor.name}
                                     </Select.Option>
                                 ) : null
-                                )}
+                            )}
                         </Select>
                     </Col>
                     <Col span={2} className='cvat-interactors-tips-icon-container'>
@@ -1320,6 +1347,33 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                         </Row>
                     </div>
                 )}
+
+                {activeInteractor?.id === 'sheet-populator' && (
+                    <div style={{ marginTop: 8, padding: '0 4px' }}>
+                        <Row align='middle' justify='start'>
+                            <Col>
+                                <Text className='cvat-text-color'>AI Task</Text>
+                            </Col>
+                        </Row>
+                        <Row justify='center'>
+                            <Col span={24}>
+                                <Select
+                                    style={{ width: '100%' }}
+                                    placeholder='Select an AI task'
+                                    value={this.state.selectedSheetTask}
+                                    onChange={(value: string) => this.setState({ selectedSheetTask: value })}
+                                >
+                                    {this.state.sheetPopulatorTasks.map((task: string) => (
+                                        <Select.Option value={task} key={task}>
+                                            {task}
+                                        </Select.Option>
+                                    ))}
+                                </Select>
+                            </Col>
+                        </Row>
+                    </div>
+                )}
+
 
                 <div className='cvat-tools-interactor-setups'>
                     <div>
@@ -1572,7 +1626,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
 
         const interactionContent: JSX.Element | null = showInteractionContent ? (
             <>
-                { convertMasksToPolygons && (
+                {convertMasksToPolygons && (
                     <ApproximationAccuracy
                         approxPolyAccuracy={approxPolyAccuracy}
                         onChange={(value: number) => {
@@ -1580,7 +1634,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                         }}
                     />
                 )}
-                { showConfidenceControl && (
+                {showConfidenceControl && (
                     <ConfidenceThreshold
                         thresholdValue={thresholdValue}
                         onChange={(value: number) => {
