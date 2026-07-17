@@ -9,7 +9,7 @@ spec:
   description: Internal VLM function - reads headers, extracts fields, populates sheet
   runtime: 'python:3.11'
   handler: main:handler
-  eventTimeout: 180s
+  eventTimeout: 300s
   env:
     - name: PYTHONPATH
       value: /opt/nuclio
@@ -23,7 +23,6 @@ spec:
         - kind: RUN
           value: >-
             pip install uv && uv pip install --system --no-cache-dir
-            requests pillow
             google-api-python-client google-auth-httplib2 google-auth-oauthlib
             langchain-openai mlflow-skinny[langchain] pandas
         - kind: WORKDIR

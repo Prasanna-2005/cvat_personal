@@ -1,9 +1,6 @@
 import json
 import os
 import re
-import base64
-import io
-from PIL import Image
 import mlflow.langchain
 import mlflow
 from google.oauth2 import service_account
@@ -41,7 +38,7 @@ def init_context(context):
 
     context.vlm = ChatOpenAI(
         model="google/gemma-4-31b-it",
-        temperature=0.2,
+        temperature=0.1,
         openai_api_base="https://openrouter.ai/api/v1",
     )
 
@@ -60,45 +57,48 @@ def get_standardized_headers(context, spreadsheet_id):
     # Flatten and filter out empty entries
     return [row[0].strip() for row in rows if row and row[0].strip()]
 
-
 def run_vlm_extraction(context, image_b64, standard_headers):
     """
     Queries the VLM with strict structural parameters ensuring clean row normalization.
     Returns a list of [standardized_label, label, value] arrays.
     """
     prompt_text = (
-    f"Core Objective: {TASK_INSTRUCTION}\n\n"
-    "You are a document information extraction and mapping engine. "
-    "You are provided with a document image and a list of ground-truth standardized labels.\n\n"
+        f"Core Objective: {TASK_INSTRUCTION}\n\n"
+        "You are a document information extraction and mapping engine. "
+        "You are provided with a document image and a list of ground-truth standardized labels.\n\n"
 
-    f"Ground-Truth Standardized Labels:\n{json.dumps(standard_headers)}\n\n"
+        f"Ground-Truth Standardized Labels:\n{json.dumps(standard_headers)}\n\n"
 
-    "Extraction Rules:\n"
-    "1. Identify every visible key-value field within the document image.\n"
-    "2. For each extracted field, return exactly three elements in the following order:\n"
-    "   [standardized_label, label, value]\n"
-    "3. The 'label' is the exact key text visible in the document. Preserve it verbatim.\n"
-    "4. Match the extracted 'label' to exactly one entry from the provided 'Ground-Truth Standardized Labels'. "
-    "Choose the closest semantic equivalent. The 'standardized_label' must be an exact string from the provided list. "
-    "Never invent, modify, or hallucinate a standardized label.\n"
-    "5. The 'value' is the text associated with the extracted label. Preserve it exactly as it appears in the document. "
-    "Do not paraphrase, normalize, or infer missing content.\n"
-    "6. The 'value' must always be returned as a single-line string. "
-    "If it spans multiple visual lines, reconstruct it in natural reading order (top-to-bottom, left-to-right). "
-    "Remove line breaks. Use spaces when joining lines that form a continuous phrase, sentence, name, or address. "
-    "Use commas only when the lines represent logically separate items, list elements, or independent values.\n"
-    "7. Each standardized_label may appear at most once in the output. "
-    "If multiple extracted fields could map to the same standardized_label, return only the best matching field.\n"
-    "8. Ignore decorative text, page headers, footers, logos, watermarks, scratchpad and unrelated content unless they are part of a valid key-value field.\n\n"
-    "9. Do not output conversational text, preambles, explanations, or chain-of-thought markdown blocks."
+        "Extraction Rules:\n"
+        "1. Identify every visible key-value field within the document image.\n"
+        "2. For each extracted field, return exactly three elements in the following order:\n"
+        "   [standardized_label, label, value]\n"
+        "3. The 'label' is the exact key text visible in the document. Preserve it verbatim. "
+        "If the value is visually present but has no accompanying key text, set label to an empty string ''.\n"
+        "4. Match the extracted field to exactly one entry from the provided 'Ground-Truth Standardized Labels'. "
+        "Choose the closest semantic equivalent. The 'standardized_label' must be an exact string from the provided list. "
+        "Never invent, modify, or hallucinate a standardized label.\n"
+        "5. The 'value' is the text associated with the extracted field. Preserve it exactly as it appears in the document. "
+        "Do not paraphrase, normalize, or infer missing content.\n"
+        "6. The 'value' must always be returned as a single-line string. "
+        "If it spans multiple visual lines, reconstruct it in natural reading order (top-to-bottom, left-to-right). "
+        "Remove line breaks. Use spaces when joining lines that form a continuous phrase, sentence, name, or address. "
+        "Use commas only when the lines represent logically separate items, list elements, or independent values.\n"
+        "7. Multiple extracted fields may map to the same standardized_label. "
+        "Return a separate entry for each one — do not collapse or deduplicate them.\n"
+        "8. If a field label is visible in the document but has no associated value, "
+        "still return it — set 'value' to an empty string ''.\n"
+        "9. Ignore decorative text, page headers, footers, logos, watermarks, scratchpad and unrelated content "
+        "unless they are part of a valid key-value field.\n"
+        "10. Do not output conversational text, preambles, explanations, or chain-of-thought markdown blocks.\n\n"
 
-    "Output Format:\n"
-    "Return only a raw JSON array of arrays. "
-    "Do not wrap the output in markdown or ```json fences. "
-    "Do not include explanations, comments, or additional text.\n"
-    'Expected format:\n'
-    '[["standardized_label", "label", "value"], ...]'
-)
+        "Output Format:\n"
+        "Return only a raw JSON array of arrays. "
+        "Do not wrap the output in markdown or ```json fences. "
+        "Do not include explanations, comments, or additional text.\n"
+        "Expected format:\n"
+        '[["standardized_label", "label", "value"], ...]'
+    )
 
     message = HumanMessage(content=[
         {"type": "text", "text": prompt_text},
@@ -109,43 +109,54 @@ def run_vlm_extraction(context, image_b64, standard_headers):
         response = context.vlm.invoke([message])
 
     raw = response.content.strip()
-    # Robust cleanup regex if the VLM leaks code block delimiters regardless of instructions
     raw = re.sub(r"^```(json)?|```$", "", raw, flags=re.MULTILINE).strip()
-    return json.loads(raw)
 
+    try:
+        extracted = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"VLM returned invalid JSON: {e}. Raw response: {raw[:500]}"
+        )
 
-def map_into_sheet(context, spreadsheet_id, extracted_rows):
+    if not isinstance(extracted, list):
+        raise ValueError(
+            f"VLM returned {type(extracted).__name__} instead of a list. Raw response: {raw[:500]}"
+        )
+
+    # Defensive filter: keep only well-formed [standardized_label, label, value] triples
+    # Value may be empty (key-only fields are valid)
+    extracted = [
+        row for row in extracted
+        if isinstance(row, list) and len(row) == 3
+    ]
+
+    return extracted
+
+def map_into_sheet(context, spreadsheet_id, extracted_rows, gt_labels):
     """
-    Read Column 1, match standardized_label, populate Column 2 (label) & Column 3 (value).
+    Write extracted_rows to sheet — only rows whose standardized_label exists in col A.
+    Clears the range first, then rewrites compactly with no gaps.
     """
-    sheet_range = "Sheet1!A2:C75"
-    result = context.sheets.spreadsheets().values().get(
+    num_gt = len(gt_labels)
+    sheet_range = f"Sheet1!A2:C{num_gt + 10}"   # 10: safety margin
+    matched_rows = [
+        row for row in extracted_rows
+        if len(row) == 3 and row[0] in gt_labels
+    ]
+
+    context.sheets.spreadsheets().values().clear(
         spreadsheetId=spreadsheet_id, range=sheet_range,
     ).execute()
-    gt_rows = result.get('values', [])
 
-    label_lookup_vlm = {row[0]: [row[1], row[2]] for row in extracted_rows if len(row) == 3}
-
-    updates = []
-    for idx, gt_row in enumerate(gt_rows):
-        if not gt_row:
-            continue
-        gt_label = gt_row[0]
-        if gt_label in label_lookup_vlm:
-            label, value = label_lookup_vlm[gt_label]
-            sheet_row = idx + 2  # offset for header row + 1-indexing
-            updates.append({
-                "range": f"Sheet1!B{sheet_row}:C{sheet_row}",
-                "values": [[label, value]],
-            })
-
-    if updates:
-        context.sheets.spreadsheets().values().batchUpdate(
+    if matched_rows:
+        context.sheets.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
-            body={"valueInputOption": "USER_ENTERED", "data": updates},
+            range="Sheet1!A2",
+            valueInputOption="USER_ENTERED",
+            body={"values": matched_rows},
         ).execute()
 
-    return len(updates)
+    return len(matched_rows)
 
 
 def handler(context, event):
@@ -159,8 +170,8 @@ def handler(context, event):
     """
     try:
         data = event.body
-        if isinstance(data, bytes):
-            data = json.loads(data.decode('utf-8'))
+        if isinstance(data, (bytes, str)):
+            data = json.loads(data if isinstance(data, str) else data.decode('utf-8'))
 
         image_b64 = data.get("image_b64")
         spreadsheet_id = data.get("spreadsheet_id")
@@ -179,7 +190,7 @@ def handler(context, event):
         extracted_rows = run_vlm_extraction(context, image_b64, standard_headers)
 
         # Step 3: Populate the sheet with extracted data
-        updated_count = map_into_sheet(context, spreadsheet_id, extracted_rows)
+        updated_count = map_into_sheet(context, spreadsheet_id, extracted_rows, standard_headers)
 
         context.logger.info(f"extract-header: updated {updated_count} row(s) in {spreadsheet_id}")
 
