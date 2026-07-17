@@ -526,6 +526,9 @@ ingress:
   ## @param ingress.hostname Host for the ingress resource
   ##
   hostname: cvat.local
+  ## @param ingress.allowIPAccess Also create hostless Ingress rules so the app is reachable by IP
+  ##
+  allowIPAccess: false
   ## @param ingress.annotations Additional annotations for the Ingress resource.
   ##
   ## e.g:

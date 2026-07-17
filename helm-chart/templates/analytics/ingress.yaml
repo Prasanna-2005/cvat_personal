@@ -29,7 +29,14 @@ spec:
     secretName: {{ .Values.ingress.tlsSecretName }}
   {{- end }}
   rules:
-  - host: {{ .Values.ingress.hostname }}
+  {{- $hosts := list .Values.ingress.hostname }}
+  {{- if .Values.ingress.allowIPAccess }}
+  {{- $hosts = append $hosts "" }}
+  {{- end }}
+  {{- range $hosts }}
+  - {{- if . }}
+    host: {{ . }}
+    {{- end }}
     http:
       paths:
       - path: /analytics
@@ -39,4 +46,5 @@ spec:
             name: {{ $.Release.Name }}-grafana
             port:
               number: 80
+  {{- end }}
 {{- end }}

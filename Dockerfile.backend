@@ -1,0 +1,6 @@
+FROM cvat/server:v2.69.0
+
+COPY ./patches/urls.py /home/django/cvat/urls.py
+COPY ./patches/cvat-lambdaviews.py /home/django/cvat/apps/lambda_manager/views.py
+COPY ./patches/iam-urls.py /home/django/cvat/apps/iam/urls.py
+COPY ./settings.py /home/django/settings.py

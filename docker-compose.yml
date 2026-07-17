@@ -79,7 +79,10 @@ services:
 
   cvat_server:
     container_name: cvat_server
-    image: cvat/server:${CVAT_VERSION:-v2.69.0}
+    build:
+      dockerfile: Dockerfile.backend
+      context: .
+    image: cvat/server:${CVAT_VERSION:-v2.69.0}-local
     restart: always
     depends_on:
       <<: *backend-deps
@@ -276,6 +279,7 @@ services:
 
   cvat_ui:
     container_name: cvat_ui
+    image: cvat/ui:2.69.0-local
     build:
       context: .
       dockerfile: ./Dockerfile.ui
