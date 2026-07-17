@@ -20,6 +20,7 @@ interface Props {
     attributes: any[];
     values: Record<number, string>;
     changeAttribute(attrID: number, value: string): void;
+    onCreateExcel?(attrID: number): void;
     collapse(): void;
     sizeParams: SizeParams | null;
     changeSize(sizeType: SizeType, value: number): void;
@@ -93,7 +94,7 @@ function attrAreTheSame(prevProps: Props, nextProps: Props): boolean {
 
 function ItemAttributesComponent(props: Props): JSX.Element | null {
     const {
-        collapsed, attributes, values, readonly, changeAttribute, collapse,
+        collapsed, attributes, values, readonly, changeAttribute, onCreateExcel, collapse,
         sizeParams, changeSize, source, score, votes,
     } = props;
 
@@ -202,6 +203,7 @@ function ItemAttributesComponent(props: Props): JSX.Element | null {
                                         attrID={attribute.id}
                                         attrValues={attribute.values}
                                         changeAttribute={changeAttribute}
+                                        onCreateExcel={attribute.name === 'excel_link' ? onCreateExcel : undefined}
                                     />
                                 </Row>
                             ),

@@ -36,7 +36,8 @@ do
         --env MLFLOW_TRACKING_URI="${MLFLOW_TRACKING_URI}" \
         --env MLFLOW_TRACKING_USERNAME="${MLFLOW_TRACKING_USERNAME}" \
         --env MLFLOW_TRACKING_PASSWORD="${MLFLOW_TRACKING_PASSWORD}" \
-        --platform-config '{"attributes": {"network": "cvat_cvat"}}' 
+        --platform-config '{"attributes": {"network": "cvat_cvat"}}' \
+        --volume ./serverless/custom:/opt/nuclio/creds
 done
 
 nuctl get function --platform local

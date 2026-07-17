@@ -1,0 +1,44 @@
+metadata:
+  name: extract-header
+  namespace: cvat
+  annotations:
+    name: Extract Header (VLM)
+    version: 1
+
+spec:
+  description: Internal VLM function - reads headers, extracts fields, populates sheet
+  runtime: 'python:3.11'
+  handler: main:handler
+  eventTimeout: 300s
+  env:
+    - name: PYTHONPATH
+      value: /opt/nuclio
+
+  build:
+    image: cvat.python.extract.header
+    baseImage: python:3.11-slim
+
+    directives:
+      preCopy:
+        - kind: RUN
+          value: >-
+            pip install uv && uv pip install --system --no-cache-dir
+            google-api-python-client google-auth-httplib2 google-auth-oauthlib
+            langchain-openai mlflow-skinny[langchain] pandas
+        - kind: WORKDIR
+          value: /opt/nuclio
+
+  triggers:
+    myHttpTrigger:
+      numWorkers: 2
+      kind: 'http'
+      workerAvailabilityTimeoutMilliseconds: 10000
+      attributes:
+        maxRequestBodySize: 33554432 # 32MB
+
+  platform:
+    attributes:
+      restartPolicy:
+        name: always
+        maximumRetryCount: 3
+      mountMode: volume

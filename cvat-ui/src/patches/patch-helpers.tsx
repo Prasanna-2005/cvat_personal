@@ -10,6 +10,7 @@ interface OcrPatchContext {
         curZOrder: number;
         createAnnotations: (states: ObjectState[]) => void;
         updateAnnotations: (states: ObjectState[]) => Promise<void>;
+        fetchAnnotations: () => void;
         states: ObjectState[];
         labels: Label[];
         dispatch: ThunkDispatch;
