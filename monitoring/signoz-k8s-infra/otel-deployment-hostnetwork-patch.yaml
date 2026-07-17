@@ -1,0 +1,7 @@
+# Applied after helm upgrade: chart has no otelDeployment.hostNetwork value.
+# Also set dnsPolicy so cluster DNS still works with hostNetwork.
+spec:
+  template:
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet

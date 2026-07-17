@@ -1,0 +1,186 @@
+nuclio:
+  enabled: true
+  dashboard:
+    containerBuilderKind: kaniko
+    # Local MicroK8s registry is plain HTTP.
+    kaniko:
+      insecurePushRegistry: true
+      insecurePullRegistry: true
+  # In-cluster URL so Kaniko pods can push (localhost:32000 only works on the host).
+  registry:
+    pushPullUrl: "localhost:32000"
+
+# Compose: postgres:15-alpine, POSTGRES_USER=root, POSTGRES_DB=cvat, trust auth.
+# Data: ../data/cvat_db -> /mnt/disks/artifacts/cvat-data/cvat_db
+# Recommendation: try existingClaim first; if Bitnami rejects alpine datadir,
+# pg_dump from a one-off postgres:15-alpine pod and restore into Bitnami.
+postgresql:
+  enabled: true
+  architecture: standalone
+  auth:
+    username: root
+    database: cvat
+  primary:
+    persistence:
+      enabled: true
+      existingClaim: cvat-db-pvc
+    # Password for compose-era role "root" is set to match cvat-postgres-secret.
+    pgHbaConfiguration: |-
+      local all all md5
+      host all all 127.0.0.1/32 md5
+      host all all ::1/128 md5
+      host all all 0.0.0.0/0 md5
+  # bitnami-shell tags are gone from Docker Hub; use busybox for chmod init.
+  volumePermissions:
+    enabled: true
+    image:
+      registry: docker.io
+      repository: library/busybox
+      tag: 1.36.1
+      pullPolicy: IfNotPresent
+
+analytics:
+  enabled: true
+
+grafana:
+  grafana.ini:
+    server:
+      root_url: https://cvat.quantrium.ai/analytics
+
+ingress:
+  enabled: true
+  hostname: cvat.quantrium.ai
+  # Match chart Traefik IngressClass (cvat-traefik), not a bare "traefik".
+  # Leave className empty to auto-select the subchart class, or set explicitly:
+  className: cvat-traefik
+  # Also serve on raw node/LB IP (Host header = IP or missing).
+  allowIPAccess: true
+
+traefik:
+  enabled: true
+  # Bind HTTP on the node at :8080 (e.g. http://10.1.1.4:8080/).
+  # hostPort (not NodePort) — 8080 is outside MicroK8s NodePort range.
+  ports:
+    web:
+      hostPort: 8080
+      exposedPort: 8080
+
+# Pre-created PVCs from pv.yml (release name must be "cvat" for kvrocks volume name).
+redis:
+  master:
+    persistence:
+      enabled: true
+      existingClaim: cvat-inmem-db-pvc
+
+# Compose data is /var/lib/clickhouse layout; Bitnami mounts that at /bitnami/clickhouse.
+clickhouse:
+  persistence:
+    enabled: true
+    existingClaim: cvat-events-db-pvc
+  volumePermissions:
+    enabled: true
+    image:
+      registry: docker.io
+      repository: library/busybox
+      tag: 1.36.1
+      pullPolicy: IfNotPresent
+
+cvat:
+  # K8s httpGet encodes "?" as %3F, so /health?bundles becomes a 404 path.
+  opa:
+    probePath: /health
+  backend:
+    image: cvat/server
+    tag: v2.69.0-local
+    imagePullPolicy: Never
+    permissionFix:
+      enabled: false
+    defaultStorage:
+      enabled: false
+    additionalVolumes:
+      - name: cvat-backend-data
+        persistentVolumeClaim:
+          claimName: cvat-backend-data-pvc
+    additionalEnv:
+      - name: DJANGO_SETTINGS_MODULE
+        value: settings
+      - name: CVAT_HOST
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: CVAT_HOST
+      - name: OIDC_CLIENT_ID
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: OIDC_CLIENT_ID
+      - name: OIDC_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: OIDC_CLIENT_SECRET
+      - name: OIDC_SERVER_URL
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: OIDC_SERVER_URL
+      - name: KEYCLOAK_HOST
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: KEYCLOAK_HOST
+      - name: KEYCLOAK_REALM
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: KEYCLOAK_REALM
+      - name: FINUIT_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: FINUIT_API_KEY
+      - name: FINUIT_OCR_KEY
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: FINUIT_OCR_KEY
+      - name: OPENAI_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: OPENAI_API_KEY
+      - name: MLFLOW_TRACKING_URI
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: MLFLOW_TRACKING_URI
+      - name: MLFLOW_TRACKING_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: MLFLOW_TRACKING_USERNAME
+      - name: MLFLOW_TRACKING_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: cvat-secrets
+            key: MLFLOW_TRACKING_PASSWORD
+    worker:
+      export:
+        replicas: 1
+      import:
+        replicas: 1
+      chunks:
+        replicas: 1
+  kvrocks:
+    defaultStorage:
+      enabled: false
+    additionalVolumes:
+      - name: cvat-kvrocks-data
+        persistentVolumeClaim:
+          claimName: cvat-cache-db-pvc
+
+  frontend:
+    image: cvat/ui
+    # Matches local docker tag (no "v" prefix).
+    tag: 2.69.0-local
+    imagePullPolicy: Never

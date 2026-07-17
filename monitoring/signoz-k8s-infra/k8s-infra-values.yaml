@@ -1,0 +1,101 @@
+# SigNoz k8s-infra → central OTel collector (self-hosted)
+# Site-specific endpoint / cluster / env come from .env (see .env.template);
+# apply-k8s-infra.sh overrides them via helm --set.
+
+global:
+  cloud: gcp
+  clusterName: cvat-mlflow-prod
+  deploymentEnvironment: production
+
+otelCollectorEndpoint: http://10.1.1.6:4318
+otelInsecure: true
+
+presets:
+  otlphttpExporter:
+    enabled: true
+  otlpExporter:
+    enabled: false
+  loggingExporter:
+    enabled: false
+  resourceDetection:
+    detectors:
+      - gcp
+      - system
+  hostMetrics:
+    enabled: true
+  kubeletMetrics:
+    enabled: true
+  clusterMetrics:
+    enabled: true
+  # Scrape pods with prometheus.io/scrape: "true" (Traefik already has these).
+  prometheus:
+    enabled: true
+    annotationsPrefix: prometheus.io
+    scrapeInterval: 60s
+    namespaces:
+      - cvat
+
+# Use host network so pods can reach SigNoz at 10.1.1.6
+# (Calico pod CIDR cannot route to that host). Remap extension ports to avoid
+# colliding with the host otelcol-contrib (13133/1777/55679).
+otelAgent:
+  hostNetwork: true
+  ports:
+    health-check:
+      enabled: true
+      containerPort: 13134
+      servicePort: 13134
+      hostPort: 13134
+      protocol: TCP
+  livenessProbe:
+    enabled: true
+    port: 13134
+    path: /
+  readinessProbe:
+    enabled: true
+    port: 13134
+    path: /
+  config:
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13134
+      zpages:
+        endpoint: localhost:55680
+      pprof:
+        endpoint: localhost:1778
+    service:
+      telemetry:
+        # Avoid clash with host otelcol on localhost:8888
+        metrics:
+          level: none
+
+# Chart has no otelDeployment.hostNetwork; apply
+# otel-deployment-hostnetwork-patch.yaml after helm upgrades
+# (see apply-k8s-infra.sh).
+otelDeployment:
+  ports:
+    health-check:
+      enabled: true
+      containerPort: 13135
+      servicePort: 13135
+      protocol: TCP
+  livenessProbe:
+    enabled: true
+    port: 13135
+    path: /
+  readinessProbe:
+    enabled: true
+    port: 13135
+    path: /
+  config:
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13135
+      zpages:
+        endpoint: localhost:55681
+      pprof:
+        endpoint: localhost:1779
+    service:
+      telemetry:
+        metrics:
+          level: none

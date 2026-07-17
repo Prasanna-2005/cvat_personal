@@ -25,7 +25,15 @@ spec:
     secretName: {{ .Values.ingress.tlsSecretName }}
   {{- end }}
   rules:
-  - host: {{ .Values.ingress.hostname }}
+  {{- $hosts := list .Values.ingress.hostname }}
+  {{- if .Values.ingress.allowIPAccess }}
+  {{- /* empty host = match any Host, including raw IP */}}
+  {{- $hosts = append $hosts "" }}
+  {{- end }}
+  {{- range $hosts }}
+  - {{- if . }}
+    host: {{ . }}
+    {{- end }}
     http:
       paths:
       {{- range tuple "api" "admin" "static" "django-rq" "profiler" }}
@@ -44,4 +52,5 @@ spec:
             name: {{ $.Release.Name }}-frontend-service
             port:
               name: http
+  {{- end }}
 {{- end }}

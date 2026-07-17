@@ -1,0 +1,159 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: cvat-backend-data-pv
+spec:
+  capacity:
+    storage: 30Gi
+  accessModes:
+    - ReadWriteMany
+  storageClassName: manual
+  persistentVolumeReclaimPolicy: Retain
+  # Helm mounts subPaths: data, keys, logs.
+  # Host uses bind mounts (not symlinks — kubelet rejects symlink subPaths):
+  #   cvat_backend/data <- cvat_data
+  #   cvat_backend/keys <- cvat_keys
+  #   cvat_backend/logs <- cvat_logs
+  hostPath:
+    path: /mnt/disks/artifacts/cvat-data/cvat_backend
+    type: Directory
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cvat-backend-data-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: manual
+  volumeName: cvat-backend-data-pv
+  resources:
+    requests:
+      storage: 30Gi
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: cvat-db-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  persistentVolumeReclaimPolicy: Retain
+  # Bitnami PGDATA is /bitnami/postgresql/data.
+  # Host: cvat_postgres/data <- bind mount of compose cvat_db
+  #   (/mnt/disks/artifacts/cvat-data/cvat_db via ../data/cvat_db).
+  hostPath:
+    path: /mnt/disks/artifacts/cvat-data/cvat_postgres
+    type: Directory
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cvat-db-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  volumeName: cvat-db-pv
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: cvat-cache-db-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  persistentVolumeReclaimPolicy: Retain
+  # Helm mounts at /var/lib/kvrocks/db; docker-compose used /var/lib/kvrocks.
+  hostPath:
+    path: /mnt/disks/artifacts/cvat-data/cvat_cache_db/db
+    type: Directory
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cvat-cache-db-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  volumeName: cvat-cache-db-pv
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: cvat-events-db-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  persistentVolumeReclaimPolicy: Retain
+  # Compose mounted this at /var/lib/clickhouse/.
+  # Bitnami ClickHouse mounts the claim at /bitnami/clickhouse (same layout).
+  hostPath:
+    path: /mnt/disks/artifacts/cvat-data/cvat_events_db
+    type: Directory
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cvat-events-db-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  volumeName: cvat-events-db-pv
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: cvat-inmem-db-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /mnt/disks/artifacts/cvat-data/cvat_inmem_db
+    type: Directory
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cvat-inmem-db-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  volumeName: cvat-inmem-db-pv
+  resources:
+    requests:
+      storage: 10Gi
