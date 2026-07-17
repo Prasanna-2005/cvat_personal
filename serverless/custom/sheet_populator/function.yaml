@@ -2,7 +2,7 @@ metadata:
   name: sheet-populator
   namespace: cvat
   annotations:
-    name: Sheet Populator (VLM)
+    name: Excel Populator (VLM)
     version: 2
     type: interactor
     min_pos_points: 0
@@ -13,7 +13,7 @@ spec:
   description: Extract Header/Extract Table
   runtime: 'python:3.11'
   handler: main:handler
-  eventTimeout: 180s
+  eventTimeout: 300s
   env:
     - name: PYTHONPATH
       value: /opt/nuclio
