@@ -19,6 +19,7 @@ SCOPES = [
 # on the shared cvat_cvat network (container name: nuclio-nuclio-<function-name>).
 TASK_ROUTE_MAP = {
     "Extract Header": "http://nuclio-nuclio-extract-header:8080",
+    "Extract Table": "http://nuclio-nuclio-extract-table:8080",
 }
 
 
@@ -58,6 +59,39 @@ def duplicate_sheet(context, template_url: str, folder_url: str, new_file_name: 
     template_id = extract_google_id(template_url)
     folder_id = extract_google_id(folder_url)
 
+    # Search for an existing file with the same name in the destination folder
+    escaped_name = new_file_name.replace("'", "\\'")
+    query = f"name = '{escaped_name}' and '{folder_id}' in parents and trashed = false"
+    
+    response = context.drive.files().list(
+        q=query,
+        spaces='drive',
+        fields='files(id, name)',
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute()
+
+    existing_files = response.get('files', [])
+    if existing_files:
+        def _trash_callback(request_id, response, exception):
+            if exception:
+                context.logger.warn(f"sheet-populator: Failed to trash file (request {request_id}): {exception}")
+            else:
+                context.logger.info(f"sheet-populator: Trashed file (request {request_id})")
+
+        batch = context.drive.new_batch_http_request(callback=_trash_callback)
+        for f in existing_files:
+            batch.add(
+                context.drive.files().update(
+                    fileId=f['id'],
+                    body={'trashed': True},
+                    supportsAllDrives=True,
+                ),
+                request_id=f['id'],
+            )
+        batch.execute()
+        context.logger.info(f"sheet-populator: Batch trashed {len(existing_files)} existing file(s)")
+
     file_metadata = {'name': new_file_name, 'parents': [folder_id]}
     copied_file = context.drive.files().copy(
         fileId=template_id,
@@ -87,7 +121,7 @@ def invoke_downstream(context, downstream_url, image_b64, spreadsheet_id):
         downstream_url,
         json=payload,
         headers={"Content-Type": "application/json"},
-        timeout=150,  # Stay under the orchestrator's 180s eventTimeout
+        timeout=300,  # Stay under the orchestrator's 300s eventTimeout
     )
 
     if resp.status_code != 200:
