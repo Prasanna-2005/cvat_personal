@@ -49,7 +49,7 @@ yarn-error.log*
 # Ignore all the installed packages
 node_modules
 /*env*/
-/.*env*
+**/.*env*
 perfkit.egg-info/
 
 # Ignore all js dists
