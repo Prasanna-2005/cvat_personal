@@ -127,7 +127,7 @@ def map_into_sheet(context, spreadsheet_id, extracted_rows):
 
     end_col = col_letter(max_cols)
     max_row = len(extracted_rows) + 1  # +1 because data starts at row 2
-    sheet_range = f"Sheet1!A2:{end_col}{max_row + 5}"  # clear generously 5 is safety margin
+    sheet_range = f"A2:{end_col}{max_row + 5}"  # clear generously 5 is safety margin
 
     context.sheets.spreadsheets().values().clear(
         spreadsheetId=spreadsheet_id, range=sheet_range,
@@ -135,7 +135,7 @@ def map_into_sheet(context, spreadsheet_id, extracted_rows):
 
     context.sheets.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id,
-        range="Sheet1!A2",
+        range="A2",
         valueInputOption="USER_ENTERED",
         body={"values": extracted_rows},
     ).execute()

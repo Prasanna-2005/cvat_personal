@@ -49,7 +49,7 @@ def get_standardized_headers(context, spreadsheet_id):
     """
     Reads Column 1 from the spreadsheet to collect true grounding anchor keys.
     """
-    sheet_range = "Sheet1!A2:A75"
+    sheet_range = "A2:A75"
     result = context.sheets.spreadsheets().values().get(
         spreadsheetId=spreadsheet_id, range=sheet_range,
     ).execute()
@@ -138,7 +138,7 @@ def map_into_sheet(context, spreadsheet_id, extracted_rows, gt_labels):
     Clears the range first, then rewrites compactly with no gaps.
     """
     num_gt = len(gt_labels)
-    sheet_range = f"Sheet1!A2:C{num_gt + 10}"   # 10: safety margin
+    sheet_range = f"A2:C{num_gt + 10}"   # 10: safety margin
     matched_rows = [
         row for row in extracted_rows
         if len(row) == 3 and row[0] in gt_labels
@@ -151,7 +151,7 @@ def map_into_sheet(context, spreadsheet_id, extracted_rows, gt_labels):
     if matched_rows:
         context.sheets.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
-            range="Sheet1!A2",
+            range="A2",
             valueInputOption="USER_ENTERED",
             body={"values": matched_rows},
         ).execute()
