@@ -14,7 +14,7 @@ from httpx import HTTPError
 from nuclio_sdk.context import Context
 from nuclio_sdk.logger import Logger
 from PIL import Image
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_random
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 SERVICE_ACCOUNT_FILE = "/opt/nuclio/creds/cvat-sheets-integration.json"
 SCOPES = [
@@ -29,7 +29,7 @@ def log_before_retry(retry_state):
 
 default_retry = retry(
     stop=stop_after_attempt(5),
-    wait=wait_random(min=1, max=5),
+    wait=wait_exponential_jitter(initial=1, max=60 , jitter=2 ),
     retry=retry_if_exception_type(HTTPError),
     before_sleep=log_before_retry,
 )
@@ -37,16 +37,18 @@ default_retry = retry(
 # Internal Nuclio-to-Nuclio routing map.
 # Keys are the ai_task strings sent by the CVAT UI.
 # Values are in-cluster Service DNS names (MicroK8s / namespace cvat).
-TASK_ROUTE_MAP = {
-    "Extract Header": "http://nuclio-extract-header:8080",
-    "Extract Table": "http://nuclio-extract-table:8080",
-}
 
-# dev
-TASK_ROUTE_MAP = {
-    "Extract Header": "http://nuclio-nuclio-extract-header:8080",
-    "Extract Table": "http://nuclio-nuclio-extract-table:8080",
-}
+if os.getenv("KUBERNETES_SERVICE_HOST"):
+    TASK_ROUTE_MAP = {
+        "Extract Header": "http://nuclio-extract-header:8080",
+        "Extract Table": "http://nuclio-extract-table:8080",
+    }
+else:
+
+    TASK_ROUTE_MAP = {
+        "Extract Header": "http://nuclio-nuclio-extract-header:8080",
+        "Extract Table": "http://nuclio-nuclio-extract-table:8080",
+    }
 
 
 def extract_google_id(url: str) -> str:
@@ -63,7 +65,7 @@ def extract_google_id(url: str) -> str:
 
 
 def get_logger(context: Context) -> Logger:
-    return cast(Logger, context)
+    return cast(Logger, context.logger)
 
 
 class ContextVariables:
@@ -83,6 +85,8 @@ class ContextVariables:
             return httpx.AsyncClient(
                 base_url="https://www.googleapis.com/",
                 headers={"Authorization": f"Bearer {self._creds.token}"},
+                http2=True,
+                timeout=30,
             )
 
     async def get_client(self) -> httpx.AsyncClient:
@@ -207,7 +211,7 @@ async def duplicate_sheet(
     )
 
     await asyncio.gather(
-        *[trash_drive_file(cvars, logger, file_id) for file_id in existing_files["id"]],
+        *[trash_drive_file(cvars, logger, file_obj["id"]) for file_obj in existing_files],
         return_exceptions=True,
     )
 
@@ -246,7 +250,7 @@ class XDataFunctionPayload(TypedDict):
     template_url: str
     folder_url: str
     new_file_name: str
-    ai_task: str
+    ai_task: str | None
 
 
 async def handler(context: Context, event):
@@ -270,10 +274,27 @@ async def handler(context: Context, event):
     template_url = payload["template_url"]
     folder_url = payload["folder_url"]
     new_file_name = payload["new_file_name"]
-    ai_task = payload["ai_task"]
+    ai_task = payload.get("ai_task", None)
 
     if not image_b64:
         raise ValueError("Missing base64 image in payload.")
+
+    # Sheet - Duplication logic when user presses create button in CVAT-UI
+    if not ai_task:
+        spreadsheet_id, sheet_url = await duplicate_sheet(
+        cvars, logger, template_url, folder_url, new_file_name
+    )
+        logger.info("Custom template Duplicated: %s", sheet_url)
+        return context.Response(
+            body=json.dumps(
+                {
+                    "status": "success",
+                    "url": sheet_url
+                }
+            ),
+            headers={"Content-Type": "application/json"},
+            status_code=200,
+        )
 
     img_bytes = base64.b64decode(image_b64)
     img_io = io.BytesIO(img_bytes)
