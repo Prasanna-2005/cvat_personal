@@ -1,12 +1,14 @@
 import json
 import os
 import re
+from typing import List
 import mlflow.langchain
 import mlflow
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
 
 SERVICE_ACCOUNT_FILE = '/opt/nuclio/creds/cvat-sheets-integration.json'
 SCOPES = [
@@ -16,6 +18,13 @@ SCOPES = [
 TASK_INSTRUCTION = (
     'Extract every row in the given table image , for each row, return a array of strings representing the values of each cell in that row. '
 )
+
+
+class TableExtraction(BaseModel):
+    """Extracted table data from a document image."""
+    rows: List[List[str]] = Field(
+        description="List of rows extracted from the table. Each row is a list of cell values as strings."
+    )
 
 mlflow.set_experiment("cvat_extract_table")
 mlflow.langchain.autolog()
@@ -31,15 +40,17 @@ def init_context(context):
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
         raise FileNotFoundError(f"Credentials file not found at {SERVICE_ACCOUNT_FILE}")
 
-    creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES
-    )
-    context.sheets = build('sheets', 'v4', credentials=creds)
-
     context.vlm = ChatOpenAI(
-        model="google/gemma-4-31b-it",
-        temperature=0.1,
-        openai_api_base="https://openrouter.ai/api/v1",
+        model="google/gemma-4-26B-A4B-it",
+        base_url="https://openrouter.ai/api/v1",
+        temperature=0,
+        extra_body={
+            "provider": {
+                "require_parameters": True,
+                "only": ["google-vertex"],
+                "allow_fallbacks": False,
+            }
+        },
     )
 
     context.logger.info("extract-table: initialization complete.")
@@ -47,7 +58,7 @@ def init_context(context):
 
 def run_vlm_extraction(context, image_b64):
     """
-    Queries the VLM with strict structural parameters ensuring clean row normalization.
+    Queries the VLM with structured output ensuring clean row normalization.
     Returns a list of [..., ..., ...] arrays.
     """
     prompt_text = (
@@ -68,14 +79,7 @@ def run_vlm_extraction(context, image_b64):
         "8. Do not hallucinate or invent any content. "
         "9. Ignore decorative text, page headers, footers, logos, watermarks, scratchpad and unrelated content "
         "unless they are part of a valid key-value field.\n"
-        "10. Do not output conversational text, preambles, explanations, or chain-of-thought markdown blocks.\n\n"
-
-        "Output Format:\n"
-        "Return only a raw JSON array of arrays. "
-        "Do not wrap the output in markdown or ```json fences. "
-        "Do not include explanations, comments, or additional text.\n"
-        "Expected format:\n"
-        '[["cell_value1", "cell_value2", "cell_value3"], ...]'
+        "10. Do not output conversational text, preambles, explanations, or chain-of-thought markdown blocks.\n"
     )
 
     message = HumanMessage(content=[
@@ -83,29 +87,12 @@ def run_vlm_extraction(context, image_b64):
         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
     ])
 
+    structured_vlm = context.vlm.with_structured_output(TableExtraction)
+
     with mlflow.start_span(name="extract_table_vlm_call"):
-        response = context.vlm.invoke([message])
+        result = structured_vlm.invoke([message])
 
-    raw = response.content.strip()
-    raw = re.sub(r"^```(json)?|```$", "", raw, flags=re.MULTILINE).strip()
-
-    try:
-        extracted = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"VLM returned invalid JSON: {e}. Raw response: {raw[:500]}"
-        )
-
-    if not isinstance(extracted, list):
-        raise ValueError(
-            f"VLM returned {type(extracted).__name__} instead of a list. Raw response: {raw[:500]}"
-        )
-
-    extracted = [
-        row for row in extracted if isinstance(row, list) and all(isinstance(cell, str) for cell in row)
-    ]
-
-    return extracted
+    return result.rows
 
 def map_into_sheet(context, spreadsheet_id, extracted_rows):
     """
@@ -153,6 +140,12 @@ def handler(context, event):
     Returns JSON: {"status": "success", "rows_updated": N}
     """
     try:
+        creds = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE, scopes=SCOPES
+        )
+
+        context.sheets = build('sheets', 'v4', credentials=creds)
+
         data = event.body
         if isinstance(data, (bytes, str)):
             data = json.loads(data if isinstance(data, str) else data.decode('utf-8'))

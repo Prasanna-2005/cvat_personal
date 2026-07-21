@@ -37,6 +37,16 @@ spec:
       attributes:
         maxRequestBodySize: 33554432 # 32MB
 
+  volumes:
+    - volume:
+        name: sheets-creds
+        secret:
+          secretName: cvat-sheets-integration
+      volumeMount:
+        name: sheets-creds
+        mountPath: /opt/nuclio/creds
+        readOnly: true
+
   platform:
     attributes:
       restartPolicy:

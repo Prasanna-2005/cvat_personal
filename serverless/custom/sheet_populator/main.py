@@ -15,8 +15,13 @@ SCOPES = [
 
 # Internal Nuclio-to-Nuclio routing map.
 # Keys are the ai_task strings sent by the CVAT UI.
-# Values are the internal Docker DNS URLs of downstream VLM functions
-# on the shared cvat_cvat network (container name: nuclio-nuclio-<function-name>).
+# Values are in-cluster Service DNS names (MicroK8s / namespace cvat).
+TASK_ROUTE_MAP = {
+    "Extract Header": "http://nuclio-extract-header:8080",
+    "Extract Table": "http://nuclio-extract-table:8080",
+}
+
+# dev
 TASK_ROUTE_MAP = {
     "Extract Header": "http://nuclio-nuclio-extract-header:8080",
     "Extract Table": "http://nuclio-nuclio-extract-table:8080",
@@ -58,11 +63,12 @@ def init_context(context):
 def duplicate_sheet(context, template_url: str, folder_url: str, new_file_name: str):
     template_id = extract_google_id(template_url)
     folder_id = extract_google_id(folder_url)
+    context.logger.info("Duplicating sheet '%s' into folder: '%s'", template_id, folder_id)
 
     # Search for an existing file with the same name in the destination folder
     escaped_name = new_file_name.replace("'", "\\'")
     query = f"name = '{escaped_name}' and '{folder_id}' in parents and trashed = false"
-    
+
     response = context.drive.files().list(
         q=query,
         spaces='drive',
@@ -146,6 +152,12 @@ def handler(context, event):
     3. Returns the sheet URL to CVAT UI
     """
     try:
+
+        creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES
+        )
+        context.drive = build('drive', 'v3', credentials=creds)
+
         data = event.body
         if isinstance(data, bytes):
             data = json.loads(data.decode('utf-8'))
@@ -208,6 +220,7 @@ def handler(context, event):
 
         # --- Duplicate the Google Sheet template ---
         spreadsheet_id, sheet_url = duplicate_sheet(context, template_url, folder_url, new_file_name)
+        context.logger.info("Duplicated sheet '%s' with url '%s'", spreadsheet_id, sheet_url)
 
         # --- Delegate VLM extraction + sheet population to downstream ---
         result = invoke_downstream(context, downstream_url, cropped_image_b64, spreadsheet_id)
