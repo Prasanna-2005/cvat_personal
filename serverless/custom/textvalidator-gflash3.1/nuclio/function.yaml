@@ -19,6 +19,9 @@ spec:
   env:
     - name: PYTHONPATH
       value: /opt/nuclio
+  loggerSinks:
+    - level: "info"
+
 
   build:
     image: cvat.custom.text-validator.gflash
@@ -38,12 +41,12 @@ spec:
         - kind: ADD
           value: https://raw.githubusercontent.com/web-fonts/ttf/refs/heads/master/dejavu-sans-webfont.ttf ./opt/nuclio/font.ttf
   triggers:
-    myHttpTrigger:
-      numWorkers: 2
-      kind: 'http'
-      workerAvailabilityTimeoutMilliseconds: 10000
-      attributes:
-        maxRequestBodySize: 33554432 # 32MB
+    http:
+      kind: http
+      mode: async
+      async:
+        maxConnectionsNumber: 1000
+        minConnectionsNumber: 1000
 
   platform:
     attributes:

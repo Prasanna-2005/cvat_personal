@@ -17,6 +17,9 @@ spec:
   env:
     - name: PYTHONPATH
       value: /opt/nuclio
+  loggerSinks:
+    - level: "info"
+
 
   build:
     image: cvat.python.template.duplicator
@@ -25,7 +28,7 @@ spec:
     directives:
       preCopy:
         - kind: RUN
-          value: pip install uv && uv pip install --system --no-cache-dir requests google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          value: pip install uv && uv pip install --system --no-cache-dir requests httpx[http2] google-api-python-client google-auth-httplib2 google-auth-oauthlib
         - kind: WORKDIR
           value: /opt/nuclio
 

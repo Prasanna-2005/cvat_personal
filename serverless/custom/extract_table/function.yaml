@@ -13,6 +13,9 @@ spec:
   env:
     - name: PYTHONPATH
       value: /opt/nuclio
+  loggerSinks:
+    - level: "info"
+
 
   build:
     image: cvat.python.extract.table
@@ -24,7 +27,7 @@ spec:
           value: >-
             pip install uv && uv pip install --system --no-cache-dir
             google-api-python-client google-auth-httplib2 google-auth-oauthlib
-            langchain-openai mlflow-skinny[langchain] pandas
+            langchain-openai mlflow-skinny[langchain] pandas httpx[http2]
         - kind: WORKDIR
           value: /opt/nuclio
 
