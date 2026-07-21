@@ -4,7 +4,6 @@ metadata:
   annotations:
     name: Sheets Template Duplicator
     version: 2
-    type: interactor
     min_pos_points: 0
     min_neg_points: -1
     startswith_box: true

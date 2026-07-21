@@ -1278,10 +1278,6 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                 <Component targetProps={this.props} targetState={this.state} key={index} />
             ));
 
-        const validInteractors = interactors.filter((i: MLModel) => i.id !== "template-duplicator");
-        const firstId = validInteractors[0]?.id;
-        const defaultVal = firstId !== undefined ? String(firstId) : undefined;
-
         return (
             <>
                 <Row justify='start'>
@@ -1293,11 +1289,11 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                     <Col span={22}>
                         <Select
                             style={{ width: '100%' }}
-                            defaultValue={defaultVal}
+                            defaultValue={interactors[0].name}
                             onChange={this.setActiveInteractor}
                         >
-                            {validInteractors.map((interactor: MLModel): JSX.Element | null =>
-                                interactor.id !== "template-duplicator" ? (
+                            {interactors.map(
+                                (interactor: MLModel): JSX.Element => (
                                     <Select.Option
                                         value={interactor.id}
                                         title={interactor.description}
@@ -1305,7 +1301,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                                     >
                                         {interactor.name}
                                     </Select.Option>
-                                ) : null
+                                ),
                             )}
                         </Select>
                     </Col>
