@@ -28,17 +28,17 @@ spec:
           value: >-
             pip install uv && uv pip install --system --no-cache-dir
             requests pillow
-            google-api-python-client google-auth-httplib2 google-auth-oauthlib
+            google-api-python-client google-auth-httplib2 google-auth-oauthlib tenacity
         - kind: WORKDIR
           value: /opt/nuclio
 
   triggers:
-    myHttpTrigger:
-      numWorkers: 2
-      kind: 'http'
-      workerAvailabilityTimeoutMilliseconds: 10000
-      attributes:
-        maxRequestBodySize: 33554432 # 32MB
+    http:
+      kind: http
+      mode: async
+      async:
+        maxConnectionsNumber: 1000
+        minConnectionsNumber: 1000
 
   volumes:
     - volume:

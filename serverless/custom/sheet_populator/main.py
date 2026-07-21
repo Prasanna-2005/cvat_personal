@@ -1,17 +1,38 @@
+import asyncio
+import base64
+import io
 import json
 import os
 import re
-import base64
-import io
-import requests
-from PIL import Image
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+import traceback
+from typing import TypedDict, cast
 
-SERVICE_ACCOUNT_FILE = '/opt/nuclio/creds/cvat-sheets-integration.json'
+import httpx
+from google.auth.transport.requests import Request
+from google.oauth2 import service_account
+from httpx import HTTPError
+from nuclio_sdk.context import Context
+from nuclio_sdk.logger import Logger
+from PIL import Image
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_random
+
+SERVICE_ACCOUNT_FILE = "/opt/nuclio/creds/cvat-sheets-integration.json"
 SCOPES = [
-    'https://www.googleapis.com/auth/drive',
+    "https://www.googleapis.com/auth/drive",
 ]
+
+
+def log_before_retry(retry_state):
+    print(f"Attempt {retry_state.attempt_number} failed:")
+    traceback.print_exception(retry_state.outcome.exception())
+
+
+default_retry = retry(
+    stop=stop_after_attempt(5),
+    wait=wait_random(min=1, max=5),
+    retry=retry_if_exception_type(HTTPError),
+    before_sleep=log_before_retry,
+)
 
 # Internal Nuclio-to-Nuclio routing map.
 # Keys are the ai_task strings sent by the CVAT UI.
@@ -28,218 +49,277 @@ TASK_ROUTE_MAP = {
 }
 
 
-def extract_google_id(url):
+def extract_google_id(url: str) -> str:
     """
     Extracts the file/folder ID from a standard Google URL.
     """
-    match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
-    if match:
-        return match.group(1)
-    match = re.search(r"folders/([a-zA-Z0-9-_]+)", url)
-    if match:
-        return match.group(1)
+    m = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
+    if m:
+        return m.group(1)
+    m = re.search(r"folders/([a-zA-Z0-9-_]+)", url)
+    if m:
+        return m.group(1)
     return url
 
 
-def init_context(context):
+def get_logger(context: Context) -> Logger:
+    return cast(Logger, context)
+
+
+class ContextVariables:
+    def __init__(self):
+        self._creds = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE, scopes=SCOPES
+        )
+        self._client: httpx.AsyncClient | None = None
+        self._client_lock: asyncio.Lock = asyncio.Lock()
+
+    async def _build_new_client(self) -> httpx.AsyncClient:
+        async with self._client_lock:
+            if not self._creds.expired and self._client is not None:
+                return self._client
+
+            await asyncio.to_thread(self._creds.refresh, Request())
+            return httpx.AsyncClient(
+                base_url="https://www.googleapis.com/",
+                headers={"Authorization": f"Bearer {self._creds.token}"},
+            )
+
+    async def get_client(self) -> httpx.AsyncClient:
+        if self._client is not None and not self._creds.expired:
+            return self._client
+
+        self._client = await self._build_new_client()
+        return self._client
+
+    @staticmethod
+    def get_cvars(context: Context) -> "ContextVariables":
+        return getattr(context.user_data, "cvars")
+
+    def set_cvars(self, context: Context) -> None:
+        setattr(context.user_data, "cvars", self)
+
+    def get_creds(self):
+        if self._creds.expired:
+            self._creds.refresh(Request())
+
+
+def init_context(context: Context):
     """
     Runs once when the container starts.
     Initializes Drive/Sheets clients only — VLM and sheet population
     are handled by downstream functions.
     """
-    context.logger.info("sheet-populator (orchestrator): Initializing Google services...")
+    logger = get_logger(context)
+    logger.info("sheet-populator (orchestrator): Initializing Google services...")
 
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
         raise FileNotFoundError(f"Credentials file not found at {SERVICE_ACCOUNT_FILE}")
 
-    creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES
+    cvars = ContextVariables()
+    cvars.set_cvars(context)
+
+    logger.info("sheet-populator (orchestrator): initialization complete.")
+
+
+@default_retry
+async def list_drive_files(
+    cvars: ContextVariables,
+    logger: Logger,
+    query: str,
+) -> dict:
+    client = await cvars.get_client()
+    response = await client.get(
+        "/drive/v3/files",
+        params={
+            "q": query,
+            "spaces": "drive",
+            "fields": "files(id,name)",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+        },
     )
-    context.drive = build('drive', 'v3', credentials=creds)
+    response_json = response.json()
+    files = response_json["files"]
+    logger.debug("Listing files in '%s' -> '%s'", query, response_json)
+    response.raise_for_status()
+    return files
 
-    context.logger.info("sheet-populator (orchestrator): initialization complete.")
+
+async def trash_drive_file(
+    cvars: ContextVariables, logger: Logger, file_id: str
+) -> None:
+    client = await cvars.get_client()
+    response = await client.patch(
+        f"/drive/v3/files/{file_id}",
+        params={"supportsAllDrives": "true"},
+        json={"trashed": True},
+    )
+    response_json = response.json()
+    logger.info(
+        "Deleted file_id=%s response=%s status_code=%d",
+        file_id,
+        response_json,
+        response.status_code,
+    )
 
 
-def duplicate_sheet(context, template_url: str, folder_url: str, new_file_name: str):
+@default_retry
+async def copy_drive_file(
+    cvars: ContextVariables,
+    logger: Logger,
+    file_id: str,
+    new_file_name: str,
+    parents: list[str],
+) -> tuple[str, str]:
+    client = await cvars.get_client()
+    response = await client.post(
+        f"/drive/v3/files/{file_id}/copy",
+        params={
+            "fields": "id,webViewLink",
+            "supportsAllDrives": "true",
+        },
+        json={"name": new_file_name, "parents": parents},
+    )
+    response_json = response.json()
+    logger.info("Copying file_id=%s response=%s", file_id, response_json)
+    response.raise_for_status()
+    return response_json["id"], response_json["webViewLink"]
+
+
+async def duplicate_sheet(
+    cvars: ContextVariables,
+    logger: Logger,
+    template_url: str,
+    folder_url: str,
+    new_file_name: str,
+):
     template_id = extract_google_id(template_url)
     folder_id = extract_google_id(folder_url)
-    context.logger.info("Duplicating sheet '%s' into folder: '%s'", template_id, folder_id)
 
-    # Search for an existing file with the same name in the destination folder
+    logger.info("Duplicating sheet '%s' into folder: '%s'", template_id, folder_id)
+
     escaped_name = new_file_name.replace("'", "\\'")
     query = f"name = '{escaped_name}' and '{folder_id}' in parents and trashed = false"
-
-    response = context.drive.files().list(
-        q=query,
-        spaces='drive',
-        fields='files(id, name)',
-        supportsAllDrives=True,
-        includeItemsFromAllDrives=True,
-    ).execute()
-
-    existing_files = response.get('files', [])
-    if existing_files:
-        def _trash_callback(request_id, response, exception):
-            if exception:
-                context.logger.warn(f"sheet-populator: Failed to trash file (request {request_id}): {exception}")
-            else:
-                context.logger.info(f"sheet-populator: Trashed file (request {request_id})")
-
-        batch = context.drive.new_batch_http_request(callback=_trash_callback)
-        for f in existing_files:
-            batch.add(
-                context.drive.files().update(
-                    fileId=f['id'],
-                    body={'trashed': True},
-                    supportsAllDrives=True,
-                ),
-                request_id=f['id'],
-            )
-        batch.execute()
-        context.logger.info(f"sheet-populator: Batch trashed {len(existing_files)} existing file(s)")
-
-    file_metadata = {'name': new_file_name, 'parents': [folder_id]}
-    copied_file = context.drive.files().copy(
-        fileId=template_id,
-        body=file_metadata,
-        fields='id,webViewLink',
-        supportsAllDrives=True,
-    ).execute()
-
-    return copied_file.get('id'), copied_file.get('webViewLink')
-
-
-def invoke_downstream(context, downstream_url, image_b64, spreadsheet_id):
-    """
-    Sends a synchronous HTTP POST to a downstream Nuclio VLM function
-    over the internal cvat_cvat Docker network.
-    The downstream function handles everything: reading headers, VLM extraction,
-    and populating the sheet. Returns the downstream response dict.
-    """
-    payload = {
-        "image_b64": image_b64,
-        "spreadsheet_id": spreadsheet_id,
-    }
-
-    context.logger.info(f"sheet-populator: invoking downstream at {downstream_url}")
-
-    resp = requests.post(
-        downstream_url,
-        json=payload,
-        headers={"Content-Type": "application/json"},
-        timeout=300,  # Stay under the orchestrator's 300s eventTimeout
+    existing_files = await list_drive_files(cvars, logger, query)
+    logger.info(
+        "Found %d existing files in folder_id=%s", len(existing_files), folder_id
     )
 
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Downstream function returned {resp.status_code}: {resp.text}"
+    await asyncio.gather(
+        *[trash_drive_file(cvars, logger, file_id) for file_id in existing_files["id"]],
+        return_exceptions=True,
+    )
+
+    logger.info(
+        f"sheet-populator: Batch trashed {len(existing_files)} existing file(s)"
+    )
+
+    return await copy_drive_file(cvars, logger, template_id, new_file_name, [folder_id])
+
+
+async def invoke_downstream(
+    logger: Logger,
+    downstream_url: str,
+    image_b64: str,
+    spreadsheet_id: str,
+):
+    logger.info(
+        "sheet-populator: invoking downstream at %s for %s",
+        downstream_url,
+        spreadsheet_id,
+    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            downstream_url,
+            json={"image_b64": image_b64, "spreadsheet_id": spreadsheet_id},
+            headers={"Content-Type": "application/json"},
+            timeout=300,  # Stay under the orchestrator's 300s eventTimeout
         )
-
-    result = resp.json()
-    if result.get("status") != "success":
-        raise RuntimeError(
-            f"Downstream function error: {result.get('message', 'unknown error')}"
-        )
-
-    return result
+        result = resp.json()
+        logger.info("Downstream url returned %s, status_code=%d", result, resp.status_code)
+        resp.raise_for_status()
+        return result
 
 
-def handler(context, event):
+class XDataFunctionPayload(TypedDict):
+    template_url: str
+    folder_url: str
+    new_file_name: str
+    ai_task: str
+
+
+async def handler(context: Context, event):
     """
     Orchestrator: Triggered every time CVAT sends an interaction request.
     1. Duplicates the Google Sheet template
     2. Delegates VLM extraction + sheet population to a downstream Nuclio function
     3. Returns the sheet URL to CVAT UI
     """
-    try:
+    cvars = ContextVariables.get_cvars(context)
+    logger = get_logger(context)
 
-        creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES
-        )
-        context.drive = build('drive', 'v3', credentials=creds)
+    data = event.body
+    if isinstance(data, bytes):
+        data = json.loads(data.decode("utf-8"))
 
-        data = event.body
-        if isinstance(data, bytes):
-            data = json.loads(data.decode('utf-8'))
+    image_b64 = data.get("image")
 
-        image_b64 = data.get("image")
+    payload: XDataFunctionPayload = data.get("x-data", {})
+    # context.logger.info(f"payload: {payload} && image_b64: {image_b64[:100]}")
+    template_url = payload["template_url"]
+    folder_url = payload["folder_url"]
+    new_file_name = payload["new_file_name"]
+    ai_task = payload["ai_task"]
 
-        payload = data.get("x-data", {})
-        # context.logger.info(f"payload: {payload} && image_b64: {image_b64[:100]}")
-        template_url = payload.get("template_url")
-        folder_url = payload.get("folder_url")
-        new_file_name = payload.get("new_file_name")
-        ai_task = payload.get("ai_task")
+    if not image_b64:
+        raise ValueError("Missing base64 image in payload.")
 
-        if not image_b64:
-            raise ValueError("Missing base64 image in payload.")
+    img_bytes = base64.b64decode(image_b64)
+    img_io = io.BytesIO(img_bytes)
+    image = Image.open(img_io)
+    img_width, img_height = image.size
 
-        img_bytes = base64.b64decode(image_b64)
-        img_io = io.BytesIO(img_bytes)
-        image = Image.open(img_io)
-        img_width, img_height = image.size
+    obj_bbox = payload.get("obj_bbox", [])
+    if len(obj_bbox) >= 2:
+        x1, y1 = obj_bbox[0]
+        x2, y2 = obj_bbox[1]
+    else:
+        x1, y1 = 0, 0
+        x2, y2 = img_width, img_height
 
-        obj_bbox = payload.get("obj_bbox", [])
-        if len(obj_bbox) >= 2:
-            x1, y1 = obj_bbox[0]
-            x2, y2 = obj_bbox[1]
-        else:
-            x1, y1 = 0, 0
-            x2, y2 = img_width, img_height
+    left = max(0, int(min(x1, x2)))
+    top = max(0, int(min(y1, y2)))
+    right = min(img_width, int(max(x1, x2)))
+    bottom = min(img_height, int(max(y1, y2)))
 
-        left = max(0, int(min(x1, x2)))
-        top = max(0, int(min(y1, y2)))
-        right = min(img_width, int(max(x1, x2)))
-        bottom = min(img_height, int(max(y1, y2)))
+    cropped_image = image.crop((left, top, right, bottom))
 
-        cropped_image = image.crop([left, top, right, bottom])
+    img_byte_arr = io.BytesIO()
+    cropped_image.save(img_byte_arr, format="PNG")
+    img_byte_arr.seek(0)  # Reset pointer to the start of the stream
 
-        # Save cropped image to BytesIO buffer
-        img_byte_arr = io.BytesIO()
-        cropped_image.save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0) # Reset pointer to the start of the stream
+    cropped_image_b64 = base64.b64encode(img_byte_arr.getvalue()).decode("utf-8")
 
-        # Convert to base64 for the downstream function
-        cropped_image_b64 = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+    downstream_url = TASK_ROUTE_MAP[ai_task]
 
-        if not all([cropped_image_b64, template_url, folder_url, new_file_name, ai_task]):
-            return context.Response(
-                body=json.dumps({"error": "Missing image, template_url, folder_url, new_file_name or ai_task"}),
-                headers={"Content-Type": "application/json"},
-                status_code=400,
-            )
+    spreadsheet_id, sheet_url = await duplicate_sheet(
+        cvars, logger, template_url, folder_url, new_file_name
+    )
+    logger.info("Duplicated sheet '%s' with url '%s'", spreadsheet_id, sheet_url)
 
-        # --- Route to downstream VLM function ---
-        downstream_url = TASK_ROUTE_MAP.get(ai_task)
-        if not downstream_url:
-            return context.Response(
-                body=json.dumps({"error": f"Unknown ai_task: '{ai_task}'. Available: {list(TASK_ROUTE_MAP.keys())}"}),
-                headers={"Content-Type": "application/json"},
-                status_code=400,
-            )
+    result = await invoke_downstream(
+        logger, downstream_url, cropped_image_b64, spreadsheet_id
+    )
 
-        # --- Duplicate the Google Sheet template ---
-        spreadsheet_id, sheet_url = duplicate_sheet(context, template_url, folder_url, new_file_name)
-        context.logger.info("Duplicated sheet '%s' with url '%s'", spreadsheet_id, sheet_url)
-
-        # --- Delegate VLM extraction + sheet population to downstream ---
-        result = invoke_downstream(context, downstream_url, cropped_image_b64, spreadsheet_id)
-
-        context.logger.info(
-            f"sheet-populator: downstream completed — "
-            f"{result.get('rows_updated', 0)} row(s) updated in {spreadsheet_id}"
-        )
-
-        return context.Response(
-            body=json.dumps({"status": "success", "url": sheet_url, "rows_updated": result.get("rows_updated", 0)}),
-            headers={"Content-Type": "application/json"},
-            status_code=200,
-        )
-
-    except Exception as e:
-        context.logger.error(f"sheet-populator error: {str(e)}")
-        return context.Response(
-            body=json.dumps({"status": "error", "message": str(e)}),
-            headers={"Content-Type": "application/json"},
-            status_code=500,
-        )
+    return context.Response(
+        body=json.dumps(
+            {
+                "status": "success",
+                "url": sheet_url,
+                "rows_updated": result.get("rows_updated", 0),
+            }
+        ),
+        headers={"Content-Type": "application/json"},
+        status_code=200,
+    )
