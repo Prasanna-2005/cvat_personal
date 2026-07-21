@@ -115,6 +115,7 @@ services:
       - ./patches/cvat-lambdaviews.py:/home/django/cvat/apps/lambda_manager/views.py
       - ./patches/iam-urls.py:/home/django/cvat/apps/iam/urls.py
       - ./settings.py:/home/django/settings.py:ro
+      - ./patches/cvat-nginx.conf:/etc/nginx/nginx.conf:ro
     env_file:
       - ./.env
     networks:
