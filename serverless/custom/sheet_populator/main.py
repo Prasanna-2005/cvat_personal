@@ -240,10 +240,10 @@ async def invoke_downstream(
             headers={"Content-Type": "application/json"},
             timeout=300,  # Stay under the orchestrator's 300s eventTimeout
         )
-        result = resp.json()
+        result = resp.read()
         logger.info("Downstream url returned %s, status_code=%d", result, resp.status_code)
         resp.raise_for_status()
-        return result
+        return resp.json()
 
 
 class XDataFunctionPayload(TypedDict):
