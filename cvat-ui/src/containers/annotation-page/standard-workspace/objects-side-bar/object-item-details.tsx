@@ -165,15 +165,15 @@ class ObjectItemDetailsContainer extends React.PureComponent<Props> {
         const newFileName = `${projectName}_${taskId}_${jobId}_${currentLabelName}${objectId}_frame${fn}`;
 
         const { models: functions } = await core.lambda.list();
-        const interactor = functions.find((f: any) => f.id === 'template-duplicator');
+        const interactor = functions.find((f: any) => f.id === 'sheet-populator');
         if (!interactor) {
-            throw new Error("template-duplicator interactor not found in core.lambda.list()");
+            throw new Error("Sheet Populator interactor not found in core.lambda.list()");
         }
-        // 6. Call the template-duplicator Nuclio function via CVAT's lambda API
+        // 6. Call the sheet populator Nuclio function via CVAT's lambda API
         try {
             const result = await core.lambda.call(
                 jobInstance.taskId,
-                { id: 'template-duplicator' } as any,
+                { id: 'sheet-populator' } as any,
                 {
                     template_url: templateUrl,
                     folder_url: folderUrl,

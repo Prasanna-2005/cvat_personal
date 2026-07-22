@@ -4,18 +4,56 @@ This document tracks custom patches and enhancements maintained by Quantrium on 
 
 ---
 
-# [Unreleased]
+# [Released]
 
-## Added
-Not merged with main:
-`feature/QSIH-921-populate-block_no-and-line_no`
-### QSIH-921 — Auto Populate Line Number & Block Number
-- Introduced an ID Generator interactor to automatically populate `line_no` and `block_no` attributes for selected annotations.
-- Integrated automatic attribute assignment into the annotation workflow.
+## [2026-07-17]
+**Commits:** `5572d8f7b` · `f20d4e779` · `498b9fa40` · `a9f5df9cb`
+### Added
+
+#### QSIH-990 — Table Extraction
+- Added a new `extract_table` serverless function for extracting table structures from document regions.
+- Implements logic for table extraction and Excel population.
+
+### Changed
+
+#### QSIH-990 — Header Extractor Refinements
+- Increased event timeout to 300s in `extract_header` function config.
+- Refined extraction rules for improved accuracy.
+
+#### QSIH-990 — Sheet Populator Fixes
+- Fixed sheet-populator timeout configuration.
+- Added handling for duplicate sheet copies.
+
+### Fixed
+
+#### Deployment
+- Modified the Nuclio JSON key mount directory in `deploy_cpu.sh`.
 
 ---
 
-# [Released]
+## [2026-07-16]
+**Commit:** `e3f05d779`
+### Added
+
+#### QSIH-990 — Excel Populator & Header Extractor
+- Added `sheet_populator` serverless function to populate Google Sheets with extracted annotation data.
+- Added `extract_header` serverless function for extracting document headers.
+- Added `sheetPopulator.tsx` UI patch for triggering sheet population from the annotation interface.
+- Integrated sheet population trigger into `tools-control.tsx` and `patch-helpers.tsx`.
+
+---
+
+## [2026-07-15]
+**Commit:** `4e67bcb16`
+### Added
+
+#### QSIH-990 — Google Sheets Integration
+- Introduced `template_duplicator` serverless function for duplicating Google Sheets templates via the Sheets API.
+- Added a trigger button in the object details sidebar (`object-item-details.tsx`) to initiate template duplication.
+- Extended `object-item-attribute.tsx` to support the new Sheets integration attributes.
+- Updated `deploy_cpu.sh` to include the new serverless function in the deployment pipeline.
+
+---
 
 ## [2026-07-09]
 **Commit:** `198b10ead96de3010798d831bcf6d50e42a54277`

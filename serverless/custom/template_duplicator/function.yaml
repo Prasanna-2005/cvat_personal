@@ -4,7 +4,6 @@ metadata:
   annotations:
     name: Sheets Template Duplicator
     version: 2
-    type: interactor
     min_pos_points: 0
     min_neg_points: -1
     startswith_box: true
@@ -17,6 +16,9 @@ spec:
   env:
     - name: PYTHONPATH
       value: /opt/nuclio
+  loggerSinks:
+    - level: "info"
+
 
   build:
     image: cvat.python.template.duplicator
@@ -25,7 +27,7 @@ spec:
     directives:
       preCopy:
         - kind: RUN
-          value: pip install uv && uv pip install --system --no-cache-dir requests google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          value: pip install uv && uv pip install --system --no-cache-dir requests httpx[http2] google-api-python-client google-auth-httplib2 google-auth-oauthlib
         - kind: WORKDIR
           value: /opt/nuclio
 
@@ -36,6 +38,16 @@ spec:
       workerAvailabilityTimeoutMilliseconds: 10000
       attributes:
         maxRequestBodySize: 33554432 # 32MB
+
+  volumes:
+    - volume:
+        name: sheets-creds
+        secret:
+          secretName: cvat-sheets-integration
+      volumeMount:
+        name: sheets-creds
+        mountPath: /opt/nuclio/creds
+        readOnly: true
 
   platform:
     attributes:

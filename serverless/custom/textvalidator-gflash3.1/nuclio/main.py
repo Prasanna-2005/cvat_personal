@@ -209,7 +209,7 @@ async def run_validation_pipeline(
         base_url="https://openrouter.ai/api/v1",
         extra_body={"service_tier": "flex"},
         rate_limiter=rate_limiter,
-        temperature=0
+        temperature=0.1
     )
 
 

@@ -22,6 +22,9 @@ spec:
   env:
     - name: PYTHONPATH
       value: /opt/nuclio
+  loggerSinks:
+    - level: "info"
+
 
   build:
     image: cvat.custom.layout-extractor
@@ -30,17 +33,17 @@ spec:
     directives:
       preCopy:
         - kind: RUN
-          value: pip install --no-cache-dir requests Pillow
+          value: pip install --no-cache-dir httpx[http2] Pillow tenacity
         - kind: WORKDIR
           value: /opt/nuclio
 
   triggers:
-    myHttpTrigger:
-      numWorkers: 2
-      kind: 'http'
-      workerAvailabilityTimeoutMilliseconds: 10000
-      attributes:
-        maxRequestBodySize: 33554432 # 32MB
+    http:
+      kind: http
+      mode: async
+      async:
+        maxConnectionsNumber: 1000
+        minConnectionsNumber: 1000
 
   platform:
     attributes:

@@ -204,7 +204,7 @@ async def run_validation_pipeline(
         model="google/gemma-4-26B-A4B-it",
         base_url="https://openrouter.ai/api/v1",
         rate_limiter=rate_limiter,
-        temperature=0,
+        temperature=0.1,
         extra_body={
             "provider": {
                 "require_parameters": True,

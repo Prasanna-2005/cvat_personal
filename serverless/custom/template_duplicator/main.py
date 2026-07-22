@@ -16,7 +16,7 @@ def extract_google_id(url):
     if match:
          return match.group(1)
     match = re.search(r"folders/([a-zA-Z0-9-_]+)", url)
-    if match: 
+    if match:
         return match.group(1)
     return url
 
@@ -32,28 +32,23 @@ def init_context(context):
         context.logger.error(error_msg)
         raise FileNotFoundError(error_msg)
 
+def handler(context, event):
+    """
+    Triggered every time CVAT sends an HTTP request to duplicate the sheet.
+    """
     try:
+
         creds = service_account.Credentials.from_service_account_file(
             SERVICE_ACCOUNT_FILE, scopes=SCOPES
         )
         # Store the authenticated service in context.user_data for reuse
         drive = build('drive', 'v3', credentials=creds)
         context.drive = drive
-        context.logger.info(drive.about().get(fields="user,storageQuota").execute())
-
         context.logger.info(" Google Drive service initialized successfully.")
-    except Exception as e:
-        context.logger.error(f"Failed to initialize Drive service: {e}")
-        raise
 
-def handler(context, event):
-    """
-    Triggered every time CVAT sends an HTTP request to duplicate the sheet.
-    """
-    try:
         # 1. Parse the incoming JSON payload from the CVAT frontend
         body = event.body
-        
+
         template_url = body['x-data']['template_url']
         folder_url = body['x-data']['folder_url']
         new_file_name = body['x-data']['new_file_name']

@@ -4,3 +4,4 @@ COPY ./patches/urls.py /home/django/cvat/urls.py
 COPY ./patches/cvat-lambdaviews.py /home/django/cvat/apps/lambda_manager/views.py
 COPY ./patches/iam-urls.py /home/django/cvat/apps/iam/urls.py
 COPY ./settings.py /home/django/settings.py
+COPY ./patches/cvat-nginx.conf /etc/nginx/nginx.conf
