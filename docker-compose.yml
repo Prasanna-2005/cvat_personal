@@ -176,7 +176,10 @@ services:
 
   nuclio:
     container_name: nuclio
-    image: quay.io/nuclio/dashboard:1.16.3-amd64
+    build:
+      dockerfile: Dockerfile.nuclio-dashboard
+      context: .
+    image: cvat/nuclio-dashboard:1.16.6-local
     restart: always
     networks:
       - cvat

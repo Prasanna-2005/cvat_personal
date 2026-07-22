@@ -1,0 +1,4 @@
+FROM quay.io/nuclio/dashboard:1.16.6-amd64
+
+# Bake raised proxy timeouts into the image (Nuclio chart has no extraVolumes).
+COPY ./patches/nuclio-nginx.conf /etc/nginx/nginx.conf
