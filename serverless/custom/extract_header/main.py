@@ -1,48 +1,119 @@
+import asyncio
 import json
 import os
-from typing import List
-import mlflow.langchain
-import mlflow
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field
+import traceback
+from typing import cast
+from urllib.parse import quote
 
-SERVICE_ACCOUNT_FILE = '/opt/nuclio/creds/cvat-sheets-integration.json'
+import httpx
+import mlflow
+import mlflow.langchain
+from google.auth.transport.requests import Request
+from google.oauth2 import service_account
+from httpx import HTTPError
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+from nuclio_sdk.context import Context
+from nuclio_sdk.logger import Logger
+from pydantic import BaseModel, Field
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
+
+SERVICE_ACCOUNT_FILE = "/opt/nuclio/creds/cvat-sheets-integration.json"
 SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 
 TASK_INSTRUCTION = (
-    'Extract every key-value field visible in the header region of this document crop.'
+    "Extract every key-value field visible in the header region of this document crop."
 )
 
 mlflow.set_experiment("cvat_extract_header")
 mlflow.langchain.autolog()
 
 
+def log_before_retry(retry_state):
+    print(f"Attempt {retry_state.attempt_number} failed:")
+    traceback.print_exception(retry_state.outcome.exception())
+
+
+default_retry = retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential_jitter(initial=1, max=60, jitter=2),
+    retry=retry_if_exception_type(HTTPError),
+    before_sleep=log_before_retry,
+)
+
+
 class HeaderExtraction(BaseModel):
-    """Extracted header fields from a document image."""
-    rows: List[List[str]] = Field(
-        description="List of extracted fields. Each field is a list of exactly 3 strings: [standardized_label, label, value]."
+    """
+    Extracted header fields from a document image.
+    Each row is [standardized_label, label, value].
+    """
+
+    rows: list[list[str]] = Field(
+        description=(
+            "List of extracted fields. Each field is a list of exactly 3 strings: "
+            "[standardized_label, label, value]."
+        )
     )
 
-def init_context(context):
+
+def get_logger(context: Context) -> Logger:
+    return cast(Logger, context.logger)
+
+
+class ContextVariables:
+    def __init__(self, vlm: ChatOpenAI):
+        self.vlm = vlm
+        self._creds = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE, scopes=SCOPES
+        )
+        self._client: httpx.AsyncClient | None = None
+        self._client_lock: asyncio.Lock = asyncio.Lock()
+
+    async def _build_new_client(self) -> httpx.AsyncClient:
+        async with self._client_lock:
+            if not self._creds.expired and self._client is not None:
+                return self._client
+
+            await asyncio.to_thread(self._creds.refresh, Request())
+            return httpx.AsyncClient(
+                base_url="https://sheets.googleapis.com/",
+                headers={"Authorization": f"Bearer {self._creds.token}"},
+                http2=True,
+                timeout=30,
+            )
+
+    async def get_client(self) -> httpx.AsyncClient:
+        if self._client is not None and not self._creds.expired:
+            return self._client
+
+        self._client = await self._build_new_client()
+        return self._client
+
+    @staticmethod
+    def get_cvars(context: Context) -> "ContextVariables":
+        return getattr(context.user_data, "cvars")
+
+    def set_cvars(self, context: Context) -> None:
+        setattr(context.user_data, "cvars", self)
+
+
+def init_context(context: Context):
     """
     Runs once when the container starts.
-    Initializes the VLM chain only — Sheets client is created per-request
-    to avoid stale connections.
+    Initializes the VLM and an authenticated Sheets HTTP client.
     """
+    logger = get_logger(context)
+    logger.info("extract-header: Initializing VLM and Sheets client...")
+
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
         raise FileNotFoundError(f"Credentials file not found at {SERVICE_ACCOUNT_FILE}")
 
-    context.logger.info("extract-header: Initializing VLM chain...")
-
-    context.vlm = ChatOpenAI(
+    vlm = ChatOpenAI(
         model="google/gemma-4-26B-A4B-it",
         base_url="https://openrouter.ai/api/v1",
-        temperature=0,
+        temperature=0.1,
         extra_body={
             "provider": {
                 "require_parameters": True,
@@ -51,153 +122,197 @@ def init_context(context):
             }
         },
     )
+    ContextVariables(vlm).set_cvars(context)
+    logger.info("extract-header: initialization complete.")
 
-    context.logger.info("extract-header: initialization complete.")
 
-
-def get_standardized_headers(sheets_service, spreadsheet_id):
+@default_retry
+async def get_sheet_values(
+    cvars: ContextVariables,
+    logger: Logger,
+    spreadsheet_id: str,
+    sheet_range: str,
+) -> list[list[str]]:
     """
-    Reads Column 1 from the spreadsheet to collect true grounding anchor keys.
+    Reads a values range from the Google Sheets API over HTTPS.
+    Retries transient HTTP failures via tenacity.
     """
-    sheet_range = "A2:A75"
-    result = sheets_service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id, range=sheet_range,
-    ).execute()
-    rows = result.get('values', [])
-    # Flatten and filter out empty entries
-    return [row[0].strip() for row in rows if row and row[0].strip()]
+    client = await cvars.get_client()
+    encoded_range = quote(sheet_range, safe="")
+    response = await client.get(
+        f"/v4/spreadsheets/{spreadsheet_id}/values/{encoded_range}",
+    )
+    response.raise_for_status()
+    response_json = response.json()
+    logger.info(
+        "get_sheet_values spreadsheet_id=%s range=%s -> %s",
+        spreadsheet_id,
+        sheet_range,
+        response_json,
+    )
+    return response_json.get("values", [])
 
-def run_vlm_extraction(context, image_b64, standard_headers):
+
+@default_retry
+async def clear_sheet_values(
+    cvars: ContextVariables,
+    logger: Logger,
+    spreadsheet_id: str,
+    sheet_range: str,
+) -> None:
     """
-    Queries the VLM with structured output ensuring clean row normalization.
-    Returns a list of [standardized_label, label, value] arrays.
+    Clears a values range via the Sheets API.
+    Retries transient HTTP failures via tenacity.
     """
-    prompt_text = (
-        f"Core Objective: {TASK_INSTRUCTION}\n\n"
-        "You are a document information extraction and mapping engine. "
-        "You are provided with a document image and a list of ground-truth standardized labels.\n\n"
-
-        f"Ground-Truth Standardized Labels:\n{json.dumps(standard_headers)}\n\n"
-
-        "Extraction Rules:\n"
-        "1. Identify every visible key-value field within the document image.\n"
-        "2. For each extracted field, return exactly three elements in the following order:\n"
-        "   [standardized_label, label, value]\n"
-        "3. The 'label' is the exact key text visible in the document. Preserve it verbatim. "
-        "If the value is visually present but has no accompanying key text, set label to an empty string ''.\n"
-        "4. Match the extracted field to exactly one entry from the provided 'Ground-Truth Standardized Labels'. "
-        "Choose the closest semantic equivalent. The 'standardized_label' must be an exact string from the provided list. "
-        "Never invent, modify, or hallucinate a standardized label.\n"
-        "5. The 'value' is the text associated with the extracted field. Preserve it exactly as it appears in the document. "
-        "Do not paraphrase, normalize, or infer missing content.\n"
-        "6. The 'value' must always be returned as a single-line string. "
-        "If it spans multiple visual lines, reconstruct it in natural reading order (top-to-bottom, left-to-right). "
-        "Remove line breaks. Use spaces when joining lines that form a continuous phrase, sentence, name, or address. "
-        "Use commas only when the lines represent logically separate items, list elements, or independent values.\n"
-        "7. Multiple extracted fields may map to the same standardized_label. "
-        "Return a separate entry for each one — do not collapse or deduplicate them.\n"
-        "8. If a field label is visible in the document but has no associated value, "
-        "still return it — set 'value' to an empty string ''.\n"
-        "9. Ignore decorative text, page headers, footers, logos, watermarks, scratchpad and unrelated content "
-        "unless they are part of a valid key-value field.\n"
-        "10. Do not output conversational text, preambles, explanations, or chain-of-thought markdown blocks.\n"
+    client = await cvars.get_client()
+    encoded_range = quote(sheet_range, safe="")
+    response = await client.post(
+        f"/v4/spreadsheets/{spreadsheet_id}/values/{encoded_range}:clear",
+    )
+    response.raise_for_status()
+    logger.info(
+        "clear_sheet_values spreadsheet_id=%s range=%s status_code=%d",
+        spreadsheet_id,
+        sheet_range,
+        response.status_code,
     )
 
-    message = HumanMessage(content=[
-        {"type": "text", "text": prompt_text},
-        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
-    ])
 
-    structured_vlm = context.vlm.with_structured_output(HeaderExtraction)
+@default_retry
+async def update_sheet_values(
+    cvars: ContextVariables,
+    logger: Logger,
+    spreadsheet_id: str,
+    sheet_range: str,
+    values: list[list[str]],
+) -> None:
+    """
+    Writes a values range via the Sheets API.
+    Retries transient HTTP failures via tenacity.
+    """
+    client = await cvars.get_client()
+    encoded_range = quote(sheet_range, safe="")
+    response = await client.put(
+        f"/v4/spreadsheets/{spreadsheet_id}/values/{encoded_range}",
+        params={"valueInputOption": "USER_ENTERED"},
+        json={"values": values},
+    )
+    response.raise_for_status()
+    logger.info(
+        "update_sheet_values spreadsheet_id=%s range=%s status_code=%d",
+        spreadsheet_id,
+        sheet_range,
+        response.status_code,
+    )
+
+
+async def get_standardized_headers(
+    cvars: ContextVariables,
+    logger: Logger,
+    spreadsheet_id: str,
+) -> list[str]:
+    """
+    Reads Column A grounding labels from the spreadsheet.
+    Empty cells are filtered out.
+    """
+    rows = await get_sheet_values(cvars, logger, spreadsheet_id, "A2:A75")
+    return [row[0].strip() for row in rows if row and row[0].strip()]
+
+
+async def run_vlm_extraction(
+    cvars: ContextVariables,
+    image_b64: str,
+    standard_headers: list[str],
+) -> list[list[str]]:
+    """
+    Queries the VLM with structured output for header fields.
+    Returns well-formed [standardized_label, label, value] triples only.
+    """
+    prompt_text = mlflow.genai.load_prompt("prompts:/extract_header@prod").format(
+        TASK_INSTRUCTION=TASK_INSTRUCTION,
+        STANDARD_HEADERS=json.dumps(standard_headers)
+    )
+
+
+    message = HumanMessage(
+        content=[
+            {"type": "text", "text": prompt_text},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+            },
+        ]
+    )
+    structured_vlm = cvars.vlm.with_structured_output(HeaderExtraction)
 
     with mlflow.start_span(name="extract_header_vlm_call"):
-        result = structured_vlm.invoke([message])
+        result = await structured_vlm.ainvoke([message])
 
-    # Defensive filter: keep only well-formed [standardized_label, label, value] triples
-    return [
-        row for row in result.rows
-        if len(row) == 3
-    ]
+    return [row for row in result.rows if len(row) == 3]
 
-def map_into_sheet(sheets_service, spreadsheet_id, extracted_rows, gt_labels):
+
+async def map_into_sheet(
+    cvars: ContextVariables,
+    logger: Logger,
+    spreadsheet_id: str,
+    extracted_rows: list[list[str]],
+    gt_labels: list[str],
+) -> int:
     """
-    Write extracted_rows to sheet — only rows whose standardized_label exists in col A.
-    Clears the range first, then rewrites compactly with no gaps.
+    Write matched extracted rows into the sheet starting at A2.
+    Clears the target range first, then rewrites compactly with no gaps.
     """
     num_gt = len(gt_labels)
-    sheet_range = f"A2:C{num_gt + 10}"   # 10: safety margin
+    sheet_range = f"A2:C{num_gt + 10}"
     matched_rows = [
-        row for row in extracted_rows
-        if len(row) == 3 and row[0] in gt_labels
+        row for row in extracted_rows if len(row) == 3 and row[0] in gt_labels
     ]
 
-    sheets_service.spreadsheets().values().clear(
-        spreadsheetId=spreadsheet_id, range=sheet_range,
-    ).execute()
+    await clear_sheet_values(cvars, logger, spreadsheet_id, sheet_range)
 
     if matched_rows:
-        sheets_service.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range="A2",
-            valueInputOption="USER_ENTERED",
-            body={"values": matched_rows},
-        ).execute()
+        await update_sheet_values(cvars, logger, spreadsheet_id, "A2", matched_rows)
 
     return len(matched_rows)
 
 
-def handler(context, event):
+async def handler(context: Context, event):
     """
-    Accepts an internal HTTP request from the sheet-populator Orchestrator.
-    Expects JSON: {"image_b64": "...", "spreadsheet_id": "..."}
-    1. Reads standardized headers from the spreadsheet
-    2. Runs VLM extraction against the image
-    3. Populates the sheet with extracted data
-    Returns JSON: {"status": "success", "rows_updated": N}
+    Accepts an internal HTTP request from the sheet-populator orchestrator.
+    Expects JSON: {"image_b64": "...", "spreadsheet_id": "..."}.
+    Reads headers, runs VLM extraction, populates the sheet, returns rows_updated.
     """
-    try:
+    cvars = ContextVariables.get_cvars(context)
+    logger = get_logger(context)
 
-        creds = service_account.Credentials.from_service_account_file(
-            SERVICE_ACCOUNT_FILE, scopes=SCOPES
-        )
+    data = event.body
+    if isinstance(data, (bytes, str)):
+        data = json.loads(data if isinstance(data, str) else data.decode("utf-8"))
 
-        sheets_service = build('sheets', 'v4', credentials=creds)
+    image_b64 = data.get("image_b64")
+    spreadsheet_id = data.get("spreadsheet_id")
 
-        data = event.body
-        if isinstance(data, (bytes, str)):
-            data = json.loads(data if isinstance(data, str) else data.decode('utf-8'))
-
-        image_b64 = data.get("image_b64")
-        spreadsheet_id = data.get("spreadsheet_id")
-
-        if not image_b64 or not spreadsheet_id:
-            return context.Response(
-                body=json.dumps({"status": "error", "message": "Missing image_b64 or spreadsheet_id"}),
-                headers={"Content-Type": "application/json"},
-                status_code=400,
-            )
-
-        # Step 1: Read ground-truth headers from the sheet
-        standard_headers = get_standardized_headers(sheets_service, spreadsheet_id)
-
-        # Step 2: Run VLM extraction
-        extracted_rows = run_vlm_extraction(context, image_b64, standard_headers)
-
-        # Step 3: Populate the sheet with extracted data
-        updated_count = map_into_sheet(sheets_service, spreadsheet_id, extracted_rows, standard_headers)
-
-        context.logger.info(f"extract-header: updated {updated_count} row(s) in {spreadsheet_id}")
-
+    if not image_b64 or not spreadsheet_id:
         return context.Response(
-            body=json.dumps({"status": "success", "rows_updated": updated_count}),
+            body=json.dumps(
+                {"status": "error", "message": "Missing image_b64 or spreadsheet_id"}
+            ),
             headers={"Content-Type": "application/json"},
-            status_code=200,
+            status_code=400,
         )
 
-    except Exception as e:
-        context.logger.error(f"extract-header error: {str(e)}")
-        return context.Response(
-            body=json.dumps({"status": "error", "message": str(e)}),
-            headers={"Content-Type": "application/json"},
-            status_code=500,
-        )
+    standard_headers = await get_standardized_headers(cvars, logger, spreadsheet_id)
+    extracted_rows = await run_vlm_extraction(cvars, image_b64, standard_headers)
+    updated_count = await map_into_sheet(
+        cvars, logger, spreadsheet_id, extracted_rows, standard_headers
+    )
+
+    logger.info(
+        "extract-header: updated %d row(s) in %s", updated_count, spreadsheet_id
+    )
+
+    return context.Response(
+        body=json.dumps({"status": "success", "rows_updated": updated_count}),
+        headers={"Content-Type": "application/json"},
+        status_code=200,
+    )

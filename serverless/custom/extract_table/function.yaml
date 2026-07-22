@@ -16,7 +16,6 @@ spec:
   loggerSinks:
     - level: "info"
 
-
   build:
     image: cvat.python.extract.table
     baseImage: python:3.11-slim
@@ -26,16 +25,18 @@ spec:
         - kind: RUN
           value: >-
             pip install uv && uv pip install --system --no-cache-dir
-            google-api-python-client google-auth-httplib2 google-auth-oauthlib
-            langchain-openai mlflow-skinny[langchain] pandas httpx[http2]
+            google-auth-oauthlib tenacity httpx[http2]
+            langchain-openai mlflow-skinny[langchain] pandas
         - kind: WORKDIR
           value: /opt/nuclio
 
   triggers:
-    myHttpTrigger:
-      numWorkers: 2
-      kind: 'http'
-      workerAvailabilityTimeoutMilliseconds: 10000
+    http:
+      kind: http
+      mode: async
+      async:
+        maxConnectionsNumber: 1000
+        minConnectionsNumber: 1000
       attributes:
         maxRequestBodySize: 33554432 # 32MB
 
