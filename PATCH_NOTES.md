@@ -6,6 +6,77 @@ This document tracks custom patches and enhancements maintained by Quantrium on 
 
 # [Released]
 
+## [2026-07-22]
+**Commits:** `e6bdad476` · `ec4b71b34` · `53adacfdd` · `1cc749fe4` · `7ac1dcfdd`
+
+### Added
+
+#### Local Deployment Script
+- Added `serverless/local_deploy.sh` script to streamline local function testing and deployment.
+
+#### Custom Nuclio Dashboard & Timeout Patch
+- Created `Dockerfile.nuclio-dashboard` and `patches/nuclio-nginx.conf` to bake raised proxy timeouts (`proxy_read_timeout 300s`) into custom `cvat/nuclio-dashboard:1.16.6-local` image, preventing 504 errors on long-running function invocations.
+
+### Changed
+
+#### QSIH-1007 — Async Layout Extractor
+- Refactored `layout_extractor` Nuclio function to operate asynchronously for long-running layout inference tasks.
+
+#### QSIH-1008 — Async Table & Header Extraction & MLflow Prompts
+- Converted `extract_table` and `extract_header` functions into asynchronous execution handlers matching the `sheet_populator` architecture.
+- Migrated prompt templates to MLflow for centralized prompt tracking and version management.
+
+#### Deployment Configurations & Helm Settings
+- Updated `helm-chart/values.override.yml` to set `functionInvocationTimeout: 5m` and reference local dashboard image.
+- Standardized custom function scanning in `deploy-k8s.sh` to match `serverless/custom/*/nuclio`.
+
+### Fixed
+
+#### Sheet Populator Response Handling
+- Fixed downstream response handling in `sheet_populator` for better error resilience.
+
+---
+
+## [2026-07-21]
+**Commits:** `d1187e037` · `864bb28a1` · `b78d4020d` · `f841edbc2` · `85c03b3c4` · `674e695c5` · `13487d952`
+
+### Added
+
+#### QSIH-1009 — HTTP/2 Integration & Async Text Validation
+- Integrated HTTP/2 protocol support across serverless functions for faster sheet service communication.
+- Added asynchronous execution triggers to `textvalidator` (QC-1) and `textvalidator-gflash3.1` (QC-2).
+
+#### QSIH-1001 — Pydantic Structured Output
+- Implemented Pydantic schema validation for VLM data extraction across `extract_header`, `extract_table`, and `sheet_populator`.
+
+### Changed
+
+#### QSIH-1010 — Template Duplicator Consolidation
+- Merged `template_duplicator` functionality directly into `sheet_populator` and updated UI components (`tools-control.tsx`, `object-item-details.tsx`).
+
+#### QSIH-1001 — Sheet Populator Refactoring
+- Comprehensive refactoring of `sheet_populator` codebase for improved quality, retry mechanics, and modularity.
+
+### Fixed
+
+#### QSIH-1006 — CVAT Backend Timeout Fix
+- Resolved HTTP read timeouts between CVAT backend and function invocation by adding `cvat-nginx.conf` proxy settings.
+
+#### Fast-QC Model Adjustments
+- Fine-tuned sampling temperature parameters for Fast-QC validation models (`textvalidator` and `textvalidator-gflash3.1`).
+
+---
+
+## [2026-07-20]
+**Commit:** `4c73d518c`
+
+### Changed
+
+#### QSIH-1001 — Dynamic Sheet Selection
+- Updated `sheet_populator` to automatically select the first sheet in target workbooks rather than using a hardcoded "Sheet1".
+
+---
+
 ## [2026-07-17]
 **Commits:** `5572d8f7b` · `f20d4e779` · `498b9fa40` · `a9f5df9cb`
 ### Added
