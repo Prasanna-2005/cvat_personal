@@ -2,6 +2,12 @@ nuclio:
   enabled: true
   dashboard:
     containerBuilderKind: kaniko
+    # Local image with raised nginx proxy_*_timeout (see Dockerfile.nuclio-dashboard).
+    # Chart has no extraVolumes hook, so timeouts are baked into the image.
+    image:
+      repository: cvat/nuclio-dashboard
+      tag: 1.16.6-local
+      pullPolicy: Never
     # Local MicroK8s registry is plain HTTP.
     kaniko:
       insecurePushRegistry: true
@@ -9,6 +15,10 @@ nuclio:
   # In-cluster URL so Kaniko pods can push (localhost:32000 only works on the host).
   registry:
     pushPullUrl: "localhost:32000"
+  # Default is 60s; sheet-populator + downstream extract often exceed that and
+  # return 504 on /api/function_invocations. Align with function eventTimeouts.
+  platform:
+    functionInvocationTimeout: 5m
 
 # Compose: postgres:15-alpine, POSTGRES_USER=root, POSTGRES_DB=cvat, trust auth.
 # Data: ../data/cvat_db -> /mnt/disks/artifacts/cvat-data/cvat_db

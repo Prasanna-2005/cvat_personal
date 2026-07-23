@@ -1,3 +1,7 @@
+serverless/custom/cvat-sheets-integration.json
+cvat-ui/*.local.conf
+settingslocal.py
+
 # Project Specific
 /data/
 /events/

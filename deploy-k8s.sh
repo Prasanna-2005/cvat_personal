@@ -191,7 +191,7 @@ cmd_functions() {
 
   if [[ "$which" == "all" ]]; then
     local d
-    for d in "$ROOT_DIR"/serverless/custom/*; do
+    for d in "$ROOT_DIR"/serverless/custom/*/nuclio; do
       deploy_one_function "$d"
     done
   else
