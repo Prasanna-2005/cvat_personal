@@ -127,7 +127,6 @@ def init_context(context: Context):
     vlm = ChatOpenAI(
         model="google/gemini-3.1-flash-lite",
         base_url="https://openrouter.ai/api/v1",
-        extra_body={"service_tier": "flex"},
         temperature=0.1
     )
     ContextVariables(vlm).set_cvars(context)
