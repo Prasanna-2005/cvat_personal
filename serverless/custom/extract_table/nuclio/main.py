@@ -111,17 +111,24 @@ def init_context(context: Context):
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
         raise FileNotFoundError(f"Credentials file not found at {SERVICE_ACCOUNT_FILE}")
 
+    # vlm = ChatOpenAI(
+    #     model="google/gemma-4-26B-A4B-it",
+    #     base_url="https://openrouter.ai/api/v1",
+    #     temperature=0.1,
+    #     extra_body={
+    #         "provider": {
+    #             "require_parameters": True,
+    #             "only": ["google-vertex"],
+    #             "allow_fallbacks": False,
+    #         }
+    #     },
+    # )
+
     vlm = ChatOpenAI(
-        model="google/gemma-4-26B-A4B-it",
+        model="google/gemini-3.1-flash-lite",
         base_url="https://openrouter.ai/api/v1",
-        temperature=0.1,
-        extra_body={
-            "provider": {
-                "require_parameters": True,
-                "only": ["google-vertex"],
-                "allow_fallbacks": False,
-            }
-        },
+        extra_body={"service_tier": "flex"},
+        temperature=0.1
     )
     ContextVariables(vlm).set_cvars(context)
     logger.info("extract-table: initialization complete.")
