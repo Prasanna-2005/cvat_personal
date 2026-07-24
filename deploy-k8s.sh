@@ -195,7 +195,7 @@ cmd_functions() {
       deploy_one_function "$d"
     done
   else
-    local path="$ROOT_DIR/serverless/custom/${which}"
+    local path="$ROOT_DIR/serverless/custom/${which}/nuclio"
     if [[ ! -d "$path" && -d "$which" ]]; then
       path="$which"
     fi

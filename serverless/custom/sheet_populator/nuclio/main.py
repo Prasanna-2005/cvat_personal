@@ -82,12 +82,13 @@ class ContextVariables:
                 return self._client
 
             await asyncio.to_thread(self._creds.refresh, Request())
-            return httpx.AsyncClient(
+            self._client = httpx.AsyncClient(
                 base_url="https://www.googleapis.com/",
                 headers={"Authorization": f"Bearer {self._creds.token}"},
                 http2=True,
-                timeout=30,
+                timeout=60,
             )
+            return self._client
 
     async def get_client(self) -> httpx.AsyncClient:
         if self._client is not None and not self._creds.expired:
@@ -267,17 +268,11 @@ async def handler(context: Context, event):
     if isinstance(data, bytes):
         data = json.loads(data.decode("utf-8"))
 
-    image_b64 = data.get("image")
-
     payload: XDataFunctionPayload = data.get("x-data", {})
-    # context.logger.info(f"payload: {payload} && image_b64: {image_b64[:100]}")
     template_url = payload["template_url"]
     folder_url = payload["folder_url"]
     new_file_name = payload["new_file_name"]
     ai_task = payload.get("ai_task", None)
-
-    if not image_b64:
-        raise ValueError("Missing base64 image in payload.")
 
     # Sheet - Duplication logic when user presses create button in CVAT-UI
     if not ai_task:
@@ -296,31 +291,36 @@ async def handler(context: Context, event):
             status_code=200,
         )
 
-    img_bytes = base64.b64decode(image_b64)
-    img_io = io.BytesIO(img_bytes)
-    image = Image.open(img_io)
-    img_width, img_height = image.size
+    image_b64 = data.get("image")
+    if not image_b64:
+        raise ValueError("Missing base64 image in payload.")
 
-    obj_bbox = payload.get("obj_bbox", [])
-    if len(obj_bbox) >= 2:
-        x1, y1 = obj_bbox[0]
-        x2, y2 = obj_bbox[1]
-    else:
-        x1, y1 = 0, 0
-        x2, y2 = img_width, img_height
+    with io.BytesIO(base64.b64decode(image_b64)) as img_io:
+        with Image.open(img_io) as image:
+            # img_bytes = base64.b64decode(image_b64)
+            # img_io = io.BytesIO(img_bytes)
+            # image = Image.open(img_io)
+            img_width, img_height = image.size
+            obj_bbox = payload.get("obj_bbox", [])
 
-    left = max(0, int(min(x1, x2)))
-    top = max(0, int(min(y1, y2)))
-    right = min(img_width, int(max(x1, x2)))
-    bottom = min(img_height, int(max(y1, y2)))
+            if len(obj_bbox) >= 2:
+                x1, y1 = obj_bbox[0]
+                x2, y2 = obj_bbox[1]
+            else:
+                x1, y1 = 0, 0
+                x2, y2 = img_width, img_height
 
-    cropped_image = image.crop((left, top, right, bottom))
+            left = max(0, int(min(x1, x2)))
+            top = max(0, int(min(y1, y2)))
+            right = min(img_width, int(max(x1, x2)))
+            bottom = min(img_height, int(max(y1, y2)))
 
-    img_byte_arr = io.BytesIO()
-    cropped_image.save(img_byte_arr, format="PNG")
-    img_byte_arr.seek(0)  # Reset pointer to the start of the stream
+            cropped_image = image.crop((left, top, right, bottom))
 
-    cropped_image_b64 = base64.b64encode(img_byte_arr.getvalue()).decode("utf-8")
+            with io.BytesIO() as img_byte_arr:
+                cropped_image.save(img_byte_arr, format="PNG")
+                img_byte_arr.seek(0)  # Reset pointer to the start of the stream
+                cropped_image_b64 = base64.b64encode(img_byte_arr.getvalue()).decode("utf-8")
 
     downstream_url = TASK_ROUTE_MAP[ai_task]
 

@@ -12,6 +12,7 @@ from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from httpx import HTTPError
 from langchain_core.messages import HumanMessage
+from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_openai import ChatOpenAI
 from nuclio_sdk.context import Context
 from nuclio_sdk.logger import Logger
@@ -77,12 +78,13 @@ class ContextVariables:
                 return self._client
 
             await asyncio.to_thread(self._creds.refresh, Request())
-            return httpx.AsyncClient(
+            self._client = httpx.AsyncClient(
                 base_url="https://sheets.googleapis.com/",
                 headers={"Authorization": f"Bearer {self._creds.token}"},
                 http2=True,
-                timeout=30,
+                timeout=60,
             )
+            return self._client
 
     async def get_client(self) -> httpx.AsyncClient:
         if self._client is not None and not self._creds.expired:
@@ -110,10 +112,17 @@ def init_context(context: Context):
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
         raise FileNotFoundError(f"Credentials file not found at {SERVICE_ACCOUNT_FILE}")
 
+    rate_limiter = InMemoryRateLimiter(
+        requests_per_second=5,
+        check_every_n_seconds=0.1,
+        max_bucket_size=5,
+    )
+
     vlm = ChatOpenAI(
         model="google/gemma-4-26B-A4B-it",
         base_url="https://openrouter.ai/api/v1",
         temperature=0.1,
+        rate_limiter=rate_limiter,
         extra_body={
             "provider": {
                 "require_parameters": True,
