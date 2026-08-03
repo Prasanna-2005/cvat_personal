@@ -195,7 +195,7 @@ async def update_sheet_values(
     encoded_range = quote(sheet_range, safe="")
     response = await client.put(
         f"/v4/spreadsheets/{spreadsheet_id}/values/{encoded_range}",
-        params={"valueInputOption": "USER_ENTERED"},
+        params={"valueInputOption": "RAW"},
         json={"values": values},
     )
     response.raise_for_status()

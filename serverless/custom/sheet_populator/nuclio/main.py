@@ -199,17 +199,29 @@ async def duplicate_sheet(
     template_url: str,
     folder_url: str,
     new_file_name: str,
+    task_id: int,
 ):
     template_id = extract_google_id(template_url)
-    folder_id = extract_google_id(folder_url)
+    parent_folder_id = extract_google_id(folder_url)
+    task_folder_id = await get_or_create_folder(
+        cvars, logger, parent_folder_id, task_id
+    )
 
-    logger.info("Duplicating sheet '%s' into folder: '%s'", template_id, folder_id)
+    logger.info(
+        "Duplicating sheet '%s' into task folder '%s' (task_id=%s)",
+        template_id,
+        task_folder_id,
+        task_id,
+    )
 
     escaped_name = new_file_name.replace("'", "\\'")
-    query = f"name = '{escaped_name}' and '{folder_id}' in parents and trashed = false"
+    query = (
+        f"name = '{escaped_name}' and "
+        f"'{task_folder_id}' in parents and trashed = false"
+    )
     existing_files = await list_drive_files(cvars, logger, query)
     logger.info(
-        "Found %d existing files in folder_id=%s", len(existing_files), folder_id
+        "Found %d existing files in task folder_id=%s", len(existing_files), task_folder_id
     )
 
     await asyncio.gather(
@@ -221,7 +233,58 @@ async def duplicate_sheet(
         f"sheet-populator: Batch trashed {len(existing_files)} existing file(s)"
     )
 
-    return await copy_drive_file(cvars, logger, template_id, new_file_name, [folder_id])
+    return await copy_drive_file(
+        cvars, logger, template_id, new_file_name, [task_folder_id]
+    )
+
+@default_retry
+async def get_or_create_folder(
+    cvars: ContextVariables,
+    logger: Logger,
+    parent_id: str,
+    task_id: int,
+) -> str:
+    folder_name = str(task_id)
+    escaped_name = folder_name.replace("'", "\\'")
+    query = (
+        f"'{parent_id}' in parents and "
+        f"name = '{escaped_name}' and "
+        "mimeType = 'application/vnd.google-apps.folder' and "
+        "trashed = false"
+    )
+    client = await cvars.get_client()
+    response = await client.get(
+        "/drive/v3/files",
+        params={
+            "q": query,
+            "fields": "files(id)",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+        },
+    )
+    response.raise_for_status()
+    folders = response.json().get("files", [])
+    if folders:
+        logger.info(
+            "Using existing Drive folder '%s' under parent=%s",
+            folder_name,
+            parent_id,
+        )
+        return folders[0]["id"]
+
+    response = await client.post(
+        "/drive/v3/files",
+        params={"supportsAllDrives": "true"},
+        json={
+            "name": folder_name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_id],
+        },
+    )
+    response.raise_for_status()
+    folder_id = response.json()["id"]
+    logger.info("Created Drive folder '%s' under parent=%s", folder_name, parent_id)
+    return folder_id
 
 
 async def invoke_downstream(
@@ -253,6 +316,9 @@ class XDataFunctionPayload(TypedDict):
     folder_url: str
     new_file_name: str
     ai_task: str | None
+    task: int
+    job: int
+    obj_bbox: list
 
 
 async def handler(context: Context, event):
@@ -274,12 +340,12 @@ async def handler(context: Context, event):
     folder_url = payload["folder_url"]
     new_file_name = payload["new_file_name"]
     ai_task = payload.get("ai_task", None)
-
+    task_id = payload.get("task", None)
     # Sheet - Duplication logic when user presses create button in CVAT-UI
     if not ai_task:
         spreadsheet_id, sheet_url = await duplicate_sheet(
-        cvars, logger, template_url, folder_url, new_file_name
-    )
+            cvars, logger, template_url, folder_url, new_file_name, task_id
+        )
         logger.info("Custom template Duplicated: %s", sheet_url)
         return context.Response(
             body=json.dumps(
@@ -326,7 +392,7 @@ async def handler(context: Context, event):
     downstream_url = TASK_ROUTE_MAP[ai_task]
 
     spreadsheet_id, sheet_url = await duplicate_sheet(
-        cvars, logger, template_url, folder_url, new_file_name
+        cvars, logger, template_url, folder_url, new_file_name, task_id
     )
     logger.info("Duplicated sheet '%s' with url '%s'", spreadsheet_id, sheet_url)
 

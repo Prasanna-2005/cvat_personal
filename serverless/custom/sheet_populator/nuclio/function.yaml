@@ -10,7 +10,7 @@ metadata:
     startswith_box: true
 
 spec:
-  description: Extract Header/Extract Table
+  description: Extract Header/Extract Table/Extract Table with QC
   runtime: 'python:3.11'
   handler: main:handler
   eventTimeout: 300s
