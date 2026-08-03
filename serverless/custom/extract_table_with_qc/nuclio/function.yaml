@@ -1,0 +1,67 @@
+metadata:
+  name: extract-table-with-qc
+  namespace: cvat
+  annotations:
+    name: Extract Table with QC
+    version: 1
+
+spec:
+  description: Internal VLM function - read rows of table, populates sheet
+  runtime: 'python:3.11'
+  handler: main:handler
+  eventTimeout: 300s
+  env:
+    - name: PYTHONPATH
+      value: /opt/nuclio
+  loggerSinks:
+    - level: "info"
+
+  build:
+    image: cvat.python.extract.table-with-qc
+    baseImage: python:3.11-slim
+
+    directives:
+      preCopy:
+        - kind: RUN
+          value: >-
+            pip install uv && uv pip install --system --no-cache-dir
+            google-auth-oauthlib tenacity httpx[http2] pillow
+            langchain-openai mlflow-skinny[langchain] pandas
+        - kind: WORKDIR
+          value: /opt/nuclio
+
+  triggers:
+    http:
+      kind: http
+      mode: async
+      async:
+        maxConnectionsNumber: 1000
+        minConnectionsNumber: 1000
+      attributes:
+        maxRequestBodySize: 33554432 # 32MB
+
+  volumes:
+    - volume:
+        name: sheets-creds
+        secret:
+          secretName: cvat-sheets-integration
+      volumeMount:
+        name: sheets-creds
+        mountPath: /opt/nuclio/creds
+        readOnly: true
+
+  livenessProbe:
+    httpGet:
+      path: "/ready"
+      port: 8080
+    initialDelaySeconds: 60
+    timeoutSeconds: 60
+    periodSeconds: 60
+    failureThreshold: 10
+
+  platform:
+    attributes:
+      restartPolicy:
+        name: always
+        maximumRetryCount: 3
+      mountMode: volume

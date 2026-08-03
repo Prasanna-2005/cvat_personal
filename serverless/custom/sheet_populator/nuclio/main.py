@@ -48,6 +48,7 @@ else:
     TASK_ROUTE_MAP = {
         "Extract Header": "http://nuclio-nuclio-extract-header:8080",
         "Extract Table": "http://nuclio-nuclio-extract-table:8080",
+        "Extract Table with QC": "http://nuclio-nuclio-extract-table-with-qc:8080"
     }
 
 
