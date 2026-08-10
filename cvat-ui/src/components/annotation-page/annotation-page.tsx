@@ -136,6 +136,12 @@ export default function AnnotationPageComponent(props: Props): JSX.Element {
         }
     }, [job, workspace]);
 
+    useEffect(() => {
+        if (job && typeof frameNumber === 'number') {
+            job.activityFrame = frameNumber;
+        }
+    }, [job, frameNumber]);
+
     if (job === null || !annotationsInitialized) {
         return <Spin size='large' className='cvat-spinner' />;
     }
