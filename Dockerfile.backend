@@ -5,3 +5,6 @@ COPY ./patches/cvat-lambdaviews.py /home/django/cvat/apps/lambda_manager/views.p
 COPY ./patches/iam-urls.py /home/django/cvat/apps/iam/urls.py
 COPY ./settings.py /home/django/settings.py
 COPY ./patches/cvat-nginx.conf /etc/nginx/nginx.conf
+COPY ./patches/cvat-events-handlers.py /home/django/cvat/apps/events/handlers.py
+COPY ./patches/cvat-events-utils.py /home/django/cvat/apps/events/utils.py
+COPY ./patches/cvat-events-const.py /home/django/cvat/apps/events/const.py
