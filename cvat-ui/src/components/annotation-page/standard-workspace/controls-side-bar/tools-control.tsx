@@ -33,6 +33,7 @@ import {
     getCore, Label, MLModel, ObjectState, ObjectType, ShapeType, Job,
     MinimalShape, InteractorResults, TrackerResults,
 } from 'cvat-core-wrapper';
+import { EventScope } from 'cvat-core/src/enums';
 import openCVWrapper from 'utils/opencv-wrapper/opencv-wrapper';
 import {
     CombinedState, ActiveControl, ToolsBlockerState, PluginComponent,
@@ -57,13 +58,14 @@ import ToolsTooltips from './interactor-tooltips';
 
 import { reviewActions, finishIssueAsync } from 'actions/review-actions';
 import { ThunkDispatch } from 'utils/redux';
-import { log } from 'console';
 
 import * as OcrPatch from 'patches/ocr';
 import * as ValidatorPatch from 'patches/validator';
 import * as ClearPatch from 'patches/clear';
 import * as PropagatePatch from 'patches/propagate';
 import * as SheetPopulatorPatch from 'patches/sheetPopulator';
+
+type InteractorCallStatus = 'ok' | 'error' | 'cancelled';
 
 interface StateToProps {
     canvasInstance: Canvas;
@@ -437,6 +439,25 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
         }
     };
 
+    private logInteractorResponse(
+        interactor: MLModel,
+        startedAt: number,
+        status: InteractorCallStatus,
+    ): void {
+        const { jobInstance } = this.props;
+        const ms = Math.max(0, Date.now() - startedAt);
+        jobInstance.logger.log(EventScope.callInteractor, {
+            interactor_response_time: ms,
+            duration: ms,
+            count: 1,
+            interactor_id: String(interactor.id),
+            interactor_name: interactor.name || '',
+            status,
+        }).catch(() => {
+            // Telemetry must not break annotation UX.
+        });
+    }
+
     private runInteractionRequest = async (interactionId: string): Promise<void> => {
         const { jobInstance, canvasInstance } = this.props;
         const { activeInteractor, fetching } = this.state;
@@ -451,6 +472,19 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
 
         const { interactor, data } = latestRequest;
         this.interaction.latestRequest = null;
+
+        const isValidator = typeof interactor.id === 'string' && interactor.id.toLowerCase().includes('validator');
+        const isFastQC2 = interactor.id === 'text-validator-gflash';
+        const isOcr = interactor.id === 'python-external-ocr';
+        const isSkewOcr = interactor.id === 'skew-ocr';
+        const isPropagate = interactor.id === 'frontend-propagate';
+        const isClear = interactor.id === 'frontend-clear';
+        const isSheetPopulator = interactor.id === 'sheet-populator';
+        // Local-only tools: do not count as AI interactor wait.
+        const shouldTimeInteractor = !isClear && !isPropagate;
+
+        let startedAt: number | null = null;
+        let callStatus: InteractorCallStatus = 'ok';
 
         try {
             this.interaction.closeFetchingMessage = message.loading({
@@ -472,51 +506,73 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                         ? [rawBboxTL[0], rawBboxTL[1], rawBboxBR[0], rawBboxBR[1]]
                         : undefined;
 
-
-                const isValidator = typeof interactor.id === 'string' && interactor.id.toLowerCase().includes('validator');
-                const isFastQC2 = interactor.id === 'text-validator-gflash';
-                const isOcr = interactor.id === 'python-external-ocr';
-                const isSkewOcr = interactor.id === 'skew-ocr';
-                const isPropagate = interactor.id === 'frontend-propagate'
-                const isClear = interactor.id === 'frontend-clear';
-                const isSheetPopulator = interactor.id === 'sheet-populator';
+                if (shouldTimeInteractor) {
+                    startedAt = Date.now();
+                }
 
                 if (isClear) {
                     await ClearPatch.handleClearInteraction(this, interactor, data, selBbox);
                     canvasInstance.interact({ enabled: false });
                     return;
-                } else if (isPropagate) {
+                }
+
+                if (isPropagate) {
                     const { propagateFrameCount } = this.state;
                     await PropagatePatch.handlePropagateInteraction(
                         this, interactor, data, selBbox, propagateFrameCount,
                     );
                     canvasInstance.interact({ enabled: false });
                     return;
-                } else if (isSheetPopulator) {
+                }
+
+                if (isSheetPopulator) {
                     const { selectedSheetTask } = this.state;
                     if (!selectedSheetTask) {
                         notification.warning({ message: 'Please select an AI task before drawing.' });
                         canvasInstance.interact({ enabled: false });
+                        startedAt = null; // no AI wait occurred
                         return;
                     }
                     await SheetPopulatorPatch.handleSheetPopulatorInteraction(
                         this, interactor, data, selBbox, selectedSheetTask,
                     );
+                    if (this.interaction.id !== interactionId || this.interaction.isAborted) {
+                        callStatus = 'cancelled';
+                        return;
+                    }
                     canvasInstance.interact({ enabled: false });
                     return;
-                } else if (isValidator) {
+                }
+
+                if (isValidator) {
                     if (isFastQC2) {
                         await ValidatorPatch.cleanupDiffIssues(this, selBbox);
                     }
                     await ValidatorPatch.handleValidatorInteraction(this, interactor, data, selBbox);
+                    if (this.interaction.id !== interactionId || this.interaction.isAborted) {
+                        callStatus = 'cancelled';
+                        return;
+                    }
                     canvasInstance.interact({ enabled: false });
                     return;
-                } else if (isSkewOcr) {
+                }
+
+                if (isSkewOcr) {
                     await OcrPatch.handleSkewOcrInteraction(this, interactor, data, selBbox);
+                    if (this.interaction.id !== interactionId || this.interaction.isAborted) {
+                        callStatus = 'cancelled';
+                        return;
+                    }
                     canvasInstance.interact({ enabled: false });
                     return;
-                } else if (isOcr) {
+                }
+
+                if (isOcr) {
                     await OcrPatch.handleOcrInteraction(this, interactor, data);
+                    if (this.interaction.id !== interactionId || this.interaction.isAborted) {
+                        callStatus = 'cancelled';
+                        return;
+                    }
                     canvasInstance.interact({ enabled: false });
                     return;
                 }
@@ -526,9 +582,9 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                     job: jobInstance.id,
                 }) as InteractorResults;
 
-
                 if (this.interaction.id !== interactionId || this.interaction.isAborted) {
                     // new interaction session or the session is aborted
+                    callStatus = 'cancelled';
                     return;
                 }
 
@@ -557,13 +613,17 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                     interactorResponseReceived: !!latestResponse.length,
                     showConfidenceControl,
                 });
-            }
-            finally {
+            } catch (error: any) {
+                callStatus = 'error';
+                throw error;
+            } finally {
+                if (shouldTimeInteractor && startedAt !== null) {
+                    this.logInteractorResponse(interactor, startedAt, callStatus);
+                }
                 if (this.interaction.id === interactionId) {
                     this.interaction.closeFetchingMessage?.();
                     this.interaction.closeFetchingMessage = null;
                 }
-
                 this.setState({ fetching: false });
             }
 

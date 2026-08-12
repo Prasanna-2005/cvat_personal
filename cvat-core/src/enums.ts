@@ -135,6 +135,10 @@ export enum EventScope {
     annotationsAction = 'run:annotations_action',
     clickElement = 'click:element',
     userActivity = 'user:activity',
+
+    // Wall-clock wait for interactive AI (interactor) responses.
+    // Counted for ok / error / cancelled so active time is not inflated.
+    callInteractor = 'call:interactor',
 }
 
 export enum HistoryActions {
