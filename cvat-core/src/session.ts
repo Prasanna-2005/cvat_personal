@@ -597,6 +597,9 @@ export class Job extends Session {
         replicas_count: number;
     };
 
+    // Current annotation frame for working-time attribution (not persisted on the job model).
+    public activityFrame: number | null = null;
+
     constructor(initialData: InitializerType) {
         super();
 

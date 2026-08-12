@@ -657,6 +657,7 @@ export function implementJob(Job: typeof JobClass): typeof JobClass {
                     project_id: this.projectId,
                     task_id: this.taskId,
                     job_id: this.id,
+                    ...(Number.isInteger(this.activityFrame) ? { frame: this.activityFrame as number } : {}),
                 },
                 wait,
             );
@@ -850,7 +851,7 @@ export function implementTask(Task: typeof TaskClass): typeof TaskClass {
             const { taskID, rqID } = await serverProxy.tasks.create(
                 taskSpec,
                 taskDataSpec,
-                options?.updateStatusCallback || (() => {}),
+                options?.updateStatusCallback || (() => { }),
             );
 
             await requestsManager.listen(rqID, {
