@@ -24,7 +24,6 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": null,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -67,17 +66,16 @@
         "h": 13,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 11
       },
-      "id": 8,
+      "id": 1,
       "options": {
         "cellHeight": "sm",
         "footer": {
           "countRows": false,
           "enablePagination": true,
           "fields": [
-            "Working time(h)",
-            "Activity"
+            "Hours"
           ],
           "reducer": [
             "sum"
@@ -108,12 +106,13 @@
           },
           "pluginVersion": "4.8.2",
           "queryType": "table",
-          "rawSql": "SELECT\n    resolved_project_id AS \"Project ID\",\n    count(DISTINCT task_id) AS \"Total Tasks\",\n    count(DISTINCT job_id) AS \"Total Jobs\",\n    concat(\n        toString(floor(avg(job_total_ms) / 1000 / 3600)),\n        'hr ',\n        toString(round((avg(job_total_ms) / 1000 % 3600) / 60, 1)),\n        ' mins'\n    ) AS \"Avg Time per Job\",\n    concat(\n        toString(floor(sum(job_total_ms) / 1000 / 3600)),\n        'hr ',\n        toString(round((sum(job_total_ms) / 1000 % 3600) / 60, 1)),\n        ' mins'\n    ) AS \"Total Time Spent\"\nFROM (\n    SELECT\n        max(project_id) AS resolved_project_id,\n        job_id,\n        task_id,\n        sum(JSONExtractUInt(payload, 'working_time')) AS job_total_ms\n    FROM events\n    WHERE JSONHas(payload, 'working_time')\n      AND $__timeFilter(timestamp)\n      AND task_id IN (${tasks})\n      AND job_id IN (${jobs})\n    GROUP BY job_id, task_id\n)\nWHERE -1 IN (${projects}) OR resolved_project_id IN (${projects})\nGROUP BY resolved_project_id\nORDER BY sum(job_total_ms) DESC",
+          "rawSql": "SELECT\r\n  user_id AS `User ID`,\r\n  user_name AS `Username`,\r\n  job_id AS `Job ID`,\r\n  frame AS `Frame`,\r\n  stage AS `Stage`,\r\n  concat(toString(floor(sum(working_ms) / 1000 / 3600)), 'hr ', toString(round((sum(working_ms) / 1000 % 3600) / 60, 1)), ' mins') AS `Working hours`,\n  concat(toString(floor(sumIf(working_ms, origin != 'google_sheets') / 1000 / 3600)), 'hr ', toString(round((sumIf(working_ms, origin != 'google_sheets') / 1000 % 3600) / 60, 1)), ' mins') AS `CVAT hours`,\n  concat(toString(floor(sumIf(working_ms, origin = 'google_sheets') / 1000 / 3600)), 'hr ', toString(round((sumIf(working_ms, origin = 'google_sheets') / 1000 % 3600) / 60, 1)), ' mins') AS `Sheets hours`,\r\n  round(sum(interactor_ms) / 1000, 2) AS `Interactor seconds`\r\nFROM (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    job_id,\r\n    JSONExtractUInt(payload, 'frame') AS frame,\r\n    JSONExtractString(payload, 'stage') AS stage,\r\n    duration AS working_ms,\n    JSONExtractString(payload, 'origin') AS origin,\r\n    JSONExtractUInt(payload, 'interactor_response_time') AS interactor_ms\r\n  FROM events\r\n  WHERE scope = 'send:working_time'\r\n    AND JSONHas(payload, 'frame')\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n)\r\nGROUP BY user_id, user_name, job_id, frame, stage\r\nORDER BY user_name ASC, job_id ASC, frame ASC",
           "refId": "A"
         }
       ],
-      "title": "Project Overview",
-      "type": "table"
+      "title": "Working time by user \u00d7 job \u00d7 frame",
+      "type": "table",
+      "description": "Frame-level working time. `Working hours` = total. `CVAT hours` = UI activity (origin unset). `Sheets hours` = Google Sheets (payload.origin=google_sheets). `Interactor seconds` = AI model wait."
     },
     {
       "datasource": {
@@ -154,17 +153,16 @@
         "h": 13,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 24
       },
-      "id": 9,
+      "id": 5,
       "options": {
         "cellHeight": "sm",
         "footer": {
           "countRows": false,
           "enablePagination": true,
           "fields": [
-            "Working time(h)",
-            "Activity"
+            "Hours"
           ],
           "reducer": [
             "sum"
@@ -195,12 +193,13 @@
           },
           "pluginVersion": "4.8.2",
           "queryType": "table",
-          "rawSql": "SELECT\n    user_id AS \"User ID\",\n    user_name AS \"Username\",\n    project_id AS \"Project ID\",\n    task_id AS \"Task ID\",\n    concat(\n        toString(floor(sum(job_total_ms) / 1000 / 3600)),\n        'hr ',\n        toString(round((sum(job_total_ms) / 1000 % 3600) / 60, 1)),\n        ' mins'\n    ) AS \"Total Time Spent\",\n    concat(\n        toString(floor(avg(job_total_ms) / 1000 / 3600)),\n        'hr ',\n        toString(round((avg(job_total_ms) / 1000 % 3600) / 60, 1)),\n        ' mins'\n    ) AS \"Avg Time per Job\",\n    count(DISTINCT job_id) AS \"Jobs Worked\",\n    round(avg(event_count), 2) AS \"Avg Activity per Job\",\n    sum(event_count) AS \"Total Activity Count\"\nFROM (\n    SELECT\n        user_id,\n        user_name,\n        max(project_id) AS project_id,\n        task_id,\n        job_id,\n        sum(JSONExtractUInt(payload, 'working_time')) AS job_total_ms,\n        count() AS event_count\n    FROM events\n    WHERE JSONHas(payload, 'working_time')\n      AND $__timeFilter(timestamp)\n      AND (-1 IN (${users}) OR user_id IN (${users}))\n      AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\n      AND (task_id IN (${tasks}))\n      AND (job_id IN (${jobs}))\n    GROUP BY user_id, user_name, task_id, job_id\n)\nWHERE -1 IN (${projects}) OR project_id IN (${projects})\nGROUP BY user_id, user_name, project_id, task_id\nORDER BY sum(job_total_ms) DESC",
+          "rawSql": "SELECT\r\n  user_id AS `User ID`,\r\n  user_name AS `Username`,\r\n  job_id AS `Job ID`,\r\n  frame AS `Frame`,\r\n  concat(toString(floor(sum(working_ms) / 1000 / 3600)), 'hr ', toString(round((sum(working_ms) / 1000 % 3600) / 60, 1)), ' mins') AS `Working hours`,\n  concat(toString(floor(sumIf(working_ms, origin != 'google_sheets') / 1000 / 3600)), 'hr ', toString(round((sumIf(working_ms, origin != 'google_sheets') / 1000 % 3600) / 60, 1)), ' mins') AS `CVAT hours`,\n  concat(toString(floor(sumIf(working_ms, origin = 'google_sheets') / 1000 / 3600)), 'hr ', toString(round((sumIf(working_ms, origin = 'google_sheets') / 1000 % 3600) / 60, 1)), ' mins') AS `Sheets hours`,\r\n  round(sum(interactor_ms) / 1000, 2) AS `Interactor seconds`\r\nFROM (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    job_id,\r\n    JSONExtractUInt(payload, 'frame') AS frame,\r\n    duration AS working_ms,\n    JSONExtractString(payload, 'origin') AS origin,\r\n    JSONExtractUInt(payload, 'interactor_response_time') AS interactor_ms\r\n  FROM events\r\n  WHERE scope = 'send:working_time'\r\n    AND JSONHas(payload, 'frame')\r\n    AND JSONExtractString(payload, 'stage') = 'annotation'\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n)\r\nGROUP BY user_id, user_name, job_id, frame\r\nORDER BY user_name ASC, job_id ASC, frame ASC",
           "refId": "A"
         }
       ],
-      "title": "User Total Times",
-      "type": "table"
+      "title": "Annotation \u2014 working time by user \u00d7 job \u00d7 frame",
+      "type": "table",
+      "description": "Frame-level annotation only. "
     },
     {
       "datasource": {
@@ -241,7 +240,95 @@
         "h": 13,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 37
+      },
+      "id": 6,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "enablePagination": true,
+          "fields": [
+            "Hours"
+          ],
+          "reducer": [
+            "sum"
+          ],
+          "show": true
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "10.1.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "PDEE91DDB90597936"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "columns": [],
+              "database": "",
+              "limit": 100,
+              "mode": "list",
+              "queryType": "table",
+              "table": ""
+            }
+          },
+          "pluginVersion": "4.8.2",
+          "queryType": "table",
+          "rawSql": "SELECT\r\n  user_id AS `User ID`,\r\n  user_name AS `Username`,\r\n  job_id AS `Job ID`,\r\n  frame AS `Frame`,\r\n  concat(toString(floor(sum(working_ms) / 1000 / 3600)), 'hr ', toString(round((sum(working_ms) / 1000 % 3600) / 60, 1)), ' mins') AS `Working hours`,\n  concat(toString(floor(sumIf(working_ms, origin != 'google_sheets') / 1000 / 3600)), 'hr ', toString(round((sumIf(working_ms, origin != 'google_sheets') / 1000 % 3600) / 60, 1)), ' mins') AS `CVAT hours`,\n  concat(toString(floor(sumIf(working_ms, origin = 'google_sheets') / 1000 / 3600)), 'hr ', toString(round((sumIf(working_ms, origin = 'google_sheets') / 1000 % 3600) / 60, 1)), ' mins') AS `Sheets hours`,\r\n  round(sum(interactor_ms) / 1000, 2) AS `Interactor seconds`\r\nFROM (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    job_id,\r\n    JSONExtractUInt(payload, 'frame') AS frame,\r\n    duration AS working_ms,\n    JSONExtractString(payload, 'origin') AS origin,\r\n    JSONExtractUInt(payload, 'interactor_response_time') AS interactor_ms\r\n  FROM events\r\n  WHERE scope = 'send:working_time'\r\n    AND JSONHas(payload, 'frame')\r\n    AND JSONExtractString(payload, 'stage') = 'validation'\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n)\r\nGROUP BY user_id, user_name, job_id, frame\r\nORDER BY user_name ASC, job_id ASC, frame ASC",
+          "refId": "A"
+        }
+      ],
+      "title": "Validation \u2014 working time by user \u00d7 job \u00d7 frame",
+      "type": "table",
+      "description": "Frame-level validation only. "
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "PDEE91DDB90597936"
+      },
+      "description": "Frame-level working time. `Working hours` = total. `CVAT hours` = UI activity (origin unset). `Sheets hours` = Google Sheets (payload.origin=google_sheets). `Interactor seconds` = AI model wait.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": true
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 13,
+        "w": 24,
+        "x": 0,
+        "y": 50
       },
       "id": 2,
       "options": {
@@ -249,14 +336,11 @@
         "footer": {
           "countRows": false,
           "enablePagination": true,
-          "fields": [
-            "Working time(h)",
-            "Activity"
-          ],
+          "fields": [],
           "reducer": [
             "sum"
           ],
-          "show": true
+          "show": false
         },
         "showHeader": true,
         "sortBy": []
@@ -270,23 +354,12 @@
           },
           "editorType": "sql",
           "format": 1,
-          "meta": {
-            "builderOptions": {
-              "columns": [],
-              "database": "",
-              "limit": 100,
-              "mode": "list",
-              "queryType": "table",
-              "table": ""
-            }
-          },
-          "pluginVersion": "4.8.2",
           "queryType": "table",
-          "rawSql": "SELECT\n    user_id AS \"User ID\",\n    user_name AS \"Username\",\n    project_id AS \"Project ID\",\n    task_id AS \"Task ID\",\n    concat(\n        toString(floor(avg(job_total_ms) / 1000 / 3600)),\n        'hr ',\n        toString(round((avg(job_total_ms) / 1000 % 3600) / 60, 1)),\n        ' mins'\n    ) AS \"Avg Time per Job\",\n    count(job_id) AS \"Jobs in Task\",\n    concat(\n        toString(floor(sum(job_total_ms) / 1000 / 3600)),\n        'hr ',\n        toString(round((sum(job_total_ms) / 1000 % 3600) / 60, 1)),\n        ' mins'\n    ) AS \"Total Task Time\"\nFROM (\n    SELECT\n        user_id,\n        user_name,\n        max(project_id) AS project_id,\n        task_id,\n        job_id,\n        sum(JSONExtractUInt(payload, 'working_time')) AS job_total_ms\n    FROM events\n    WHERE JSONHas(payload, 'working_time')\n      AND $__timeFilter(timestamp)\n      AND (-1 IN (${users}) OR user_id IN (${users}))\n      AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\n      AND task_id IN (${tasks})\n      AND job_id IN (${jobs})\n    GROUP BY user_id, user_name, task_id, job_id\n)\nWHERE -1 IN (${projects}) OR project_id IN (${projects})\nGROUP BY user_id, user_name, project_id, task_id\nORDER BY user_name ASC, \"Avg Time per Job\" DESC",
+          "rawSql": "SELECT\r\n  user_id AS `User ID`,\r\n  user_name AS `Username`,\r\n  job_id AS `Job ID`,\r\n  stage AS `Stage`,\r\n  concat(toString(floor(sum(working_ms) / 1000 / 3600)), 'hr ', toString(round((sum(working_ms) / 1000 % 3600) / 60, 1)), ' mins') AS `Working hours`,\n  concat(toString(floor(sumIf(working_ms, origin != 'google_sheets') / 1000 / 3600)), 'hr ', toString(round((sumIf(working_ms, origin != 'google_sheets') / 1000 % 3600) / 60, 1)), ' mins') AS `CVAT hours`,\n  concat(toString(floor(sumIf(working_ms, origin = 'google_sheets') / 1000 / 3600)), 'hr ', toString(round((sumIf(working_ms, origin = 'google_sheets') / 1000 % 3600) / 60, 1)), ' mins') AS `Sheets hours`,\r\n  round(sum(interactor_ms) / 1000, 2) AS `Interactor seconds`\r\nFROM (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    job_id,\r\n    JSONExtractString(payload, 'stage') AS stage,\r\n    duration AS working_ms,\n    JSONExtractString(payload, 'origin') AS origin,\r\n    JSONExtractUInt(payload, 'interactor_response_time') AS interactor_ms\r\n  FROM events\r\n  WHERE scope = 'send:working_time'\r\n    AND JSONExtractString(payload, 'stage') IN ('annotation', 'validation')\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n)\r\nGROUP BY user_id, user_name, job_id, stage\r\nORDER BY user_name ASC, job_id ASC, stage ASC",
           "refId": "A"
         }
       ],
-      "title": "User Average Times",
+      "title": "Working time by user \u00d7 job \u00d7 stage",
       "type": "table"
     },
     {
@@ -328,17 +401,18 @@
         "h": 13,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 63
       },
-      "id": 7,
+      "id": 3,
       "options": {
         "cellHeight": "sm",
         "footer": {
           "countRows": false,
           "enablePagination": true,
           "fields": [
-            "Working time(h)",
-            "Activity"
+            "Created",
+            "Deleted",
+            "Net"
           ],
           "reducer": [
             "sum"
@@ -369,11 +443,11 @@
           },
           "pluginVersion": "4.8.2",
           "queryType": "table",
-          "rawSql": "SELECT\n  user_id AS User,\n  user_name AS Username,\n  project_id AS Project,\n  task_id AS Task,\n  job_id AS Job,\n  concat(\n    toString(floor(wt / 1000 / 3600)),\n    'hr ',\n    toString(round((wt / 1000 % 3600) / 60, 1)),\n    ' mins'\n  ) AS \"Working time(h)\",\n  concat(\n    toString(floor(cvat_ms / 1000 / 3600)),\n    'hr ',\n    toString(round((cvat_ms / 1000 % 3600) / 60, 1)),\n    ' mins'\n  ) AS \"CVAT time\",\n  concat(\n    toString(floor(sheets_ms / 1000 / 3600)),\n    'hr ',\n    toString(round((sheets_ms / 1000 % 3600) / 60, 1)),\n    ' mins'\n  ) AS \"Sheets time\",\n  activity AS Activity\nFROM (\n  SELECT\n    user_id,\n    user_name,\n    max(project_id) AS project_id,\n    task_id,\n    job_id,\n    sum(JSONExtractUInt(payload, 'working_time')) AS wt,\n    sumIf(JSONExtractUInt(payload, 'working_time'), JSONExtractString(payload, 'origin') != 'google_sheets') AS cvat_ms,\n    sumIf(JSONExtractUInt(payload, 'working_time'), JSONExtractString(payload, 'origin') = 'google_sheets') AS sheets_ms,\n    count() AS activity\n  FROM events\n  WHERE JSONHas(payload, 'working_time')\n    AND $__timeFilter(timestamp)\n    AND (-1 IN (${users}) OR user_id IN (${users}))\n    AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\n    AND task_id IN (${tasks})\n    AND job_id IN (${jobs})\n  GROUP BY user_id, user_name, task_id, job_id\n)\nWHERE -1 IN (${projects}) OR project_id IN (${projects})\nORDER BY Username ASC, Task ASC, Job ASC",
+          "rawSql": "SELECT\r\n  user_id AS `User ID`,\r\n  user_name AS `Username`,\r\n  job_id AS `Job ID`,\r\n  sumIf(count, scope IN ('create:shapes', 'create:tracks', 'create:tags')) AS `Created`,\r\n  sumIf(count, scope IN ('delete:shapes', 'delete:tracks', 'delete:tags')) AS `Deleted`,\r\n  sumIf(count, scope IN ('create:shapes', 'create:tracks', 'create:tags'))\r\n    - sumIf(count, scope IN ('delete:shapes', 'delete:tracks', 'delete:tags')) AS `Net`\r\nFROM events\r\nWHERE scope IN (\r\n  'create:shapes', 'create:tracks', 'create:tags',\r\n  'delete:shapes', 'delete:tracks', 'delete:tags'\r\n)\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\nGROUP BY user_id, user_name, job_id\r\nORDER BY user_name ASC, job_id ASC",
           "refId": "A"
         }
       ],
-      "title": "Working time",
+      "title": "Objects created / deleted / net by user \u00d7 job",
       "type": "table"
     },
     {
@@ -384,201 +458,15 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 25,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
             },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineStyle": {
-              "fill": "solid"
-            },
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "__systemRef": "hideSeriesFrom",
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "exclude",
-                "names": [
-                  "User 1"
-                ],
-                "prefix": "All except:",
-                "readOnly": true
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": true
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 52
-      },
-      "id": 6,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "9.3.6",
-      "targets": [
-        {
-          "builderOptions": {
-            "fields": [],
-            "filters": [],
-            "groupBy": [
-              "user_id"
-            ],
-            "metrics": [
-              {
-                "aggregation": "count",
-                "alias": "value",
-                "field": "*"
-              }
-            ],
-            "mode": "trend",
-            "orderBy": [],
-            "table": "events",
-            "timeField": "timestamp",
-            "timeFieldType": "DateTime64(3, 'Etc/UTC')"
-          },
-          "datasource": {
-            "type": "grafana-clickhouse-datasource",
-            "uid": "PDEE91DDB90597936"
-          },
-          "format": 0,
-          "hide": false,
-          "meta": {
-            "builderOptions": {
-              "fields": [],
-              "filters": [],
-              "groupBy": [
-                "user_id"
-              ],
-              "metrics": [
-                {
-                  "aggregation": "count",
-                  "alias": "value",
-                  "field": "*"
-                }
-              ],
-              "mode": "trend",
-              "orderBy": [],
-              "table": "events",
-              "timeField": "timestamp",
-              "timeFieldType": "DateTime64(3, 'Etc/UTC')"
-            }
-          },
-          "queryType": "sql",
-          "rawSql": "SELECT $__timeInterval(timestamp) as time, toString(user_id), count() as User\r\nFROM events\r\nWHERE $__timeFilter(timestamp)\r\nGROUP BY time, user_id\r\nORDER BY time ASC, user_id ASC",
-          "refId": "A"
-        }
-      ],
-      "title": "User Activity",
-      "transformations": [],
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "grafana-clickhouse-datasource",
-        "uid": "PDEE91DDB90597936"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-GrYlRd"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "bars",
-            "fillOpacity": 90,
-            "gradientMode": "scheme",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "filterable": false,
+            "inspect": true
           },
           "mappings": [],
           "thresholds": {
@@ -598,60 +486,66 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 13,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 76
       },
       "id": 4,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "enablePagination": true,
+          "fields": [
+            "Working hours",
+            "Objects created"
+          ],
+          "reducer": [
+            "sum"
+          ],
+          "show": true
         },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "showHeader": true,
+        "sortBy": []
       },
+      "pluginVersion": "10.1.2",
       "targets": [
         {
-          "builderOptions": {
-            "fields": [],
-            "filters": [],
-            "metrics": [
-              {
-                "aggregation": "count",
-                "alias": "Count",
-                "field": "*"
-              }
-            ],
-            "mode": "trend",
-            "orderBy": [],
-            "table": "events",
-            "timeField": "timestamp",
-            "timeFieldType": "DateTime64(3, 'Etc/UTC')"
-          },
           "datasource": {
             "type": "grafana-clickhouse-datasource",
             "uid": "PDEE91DDB90597936"
           },
-          "format": 0,
-          "queryType": "builder",
-          "rawSql": "SELECT $__timeInterval(timestamp) as time,  count(*) Count FROM events WHERE $__timeFilter(timestamp) GROUP BY time ORDER BY time ASC",
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "columns": [],
+              "database": "",
+              "limit": 100,
+              "mode": "list",
+              "queryType": "table",
+              "table": ""
+            }
+          },
+          "pluginVersion": "4.8.2",
+          "queryType": "table",
+          "rawSql": "SELECT\r\n  a.user_id AS `User ID`,\r\n  a.user_name AS `Username`,\r\n  concat(toString(floor(a.working_hours)), 'hr ', toString(round((a.working_hours - floor(a.working_hours)) * 60, 1)), ' mins') AS `Working hours`,\r\n  coalesce(o.objects_created, 0) AS `Objects created`,\r\n  round(coalesce(o.objects_created, 0) / nullIf(a.working_hours, 0), 2) AS `Objects per hour`\r\nFROM (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    sum(duration) / 1000 / 3600 AS working_hours\r\n  FROM events\r\n  WHERE scope = 'send:working_time'\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n  GROUP BY user_id, user_name\r\n) a\r\nLEFT JOIN (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    sum(count) AS objects_created\r\n  FROM events\r\n  WHERE scope IN ('create:shapes', 'create:tracks', 'create:tags')\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n  GROUP BY user_id, user_name\r\n) o USING (user_id, user_name)\r\nORDER BY `Objects per hour` DESC",
           "refId": "A"
         }
       ],
-      "title": "Overall Activity",
-      "type": "timeseries"
+      "title": "Annotator speed (objects/hour)",
+      "type": "table"
     }
   ],
   "refresh": "",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": [],
+  "tags": [
+    "cvat",
+    "interactor",
+    "working-time"
+  ],
   "templating": {
     "list": [
       {
@@ -806,8 +700,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "User Stats Overview",
-  "uid": "user-stats-overview",
-  "version": 6,
+  "title": "Frame Active Time (Interactor)",
+  "uid": "frame-active-time-interactor",
+  "version": 1,
   "weekStart": ""
 }
