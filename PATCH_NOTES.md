@@ -6,8 +6,44 @@ This document tracks custom patches and enhancements maintained by Quantrium on 
 
 # [Released]
 
+## [2026-08-03]
+**Commits:** `c3c69a769` · `cc8d777a1`
+
+### Added
+- Added new `extract_table_with_qc` serverless function.
+
+### Changed
+- **QSIH-1056**: Implemented table extraction output mapping from Mistral OCR.
+- Updated `sheet_populator` and `extract_table` functions to support Mistral OCR output mapping.
+- Registered the new `extract_table_with_qc` serverless function in sheet_populator serverless function.
+
+---
+
+## [2026-07-24]
+**Commit:** `9775d3718`
+
+### Changed
+- Improved serverless function reliability across all Nuclio custom functions (`extract_header`, `extract_table`, `layout_extractor`, `ppocr`, `sheet_populator`, `skewocr`, `template_duplicator`, `textvalidator`, `textvalidator-gflash3.1`) by introducing:
+  - Liveness probes
+  - Rate limiting configurations
+  - Updated timeouts
+- Updated `deploy-k8s.sh` and `helm-chart/values.override.yml` to reflect these reliability configurations.
+
+---
+
+## [2026-07-23]
+**Commits:** `87d10a3b3` · `99f26deb3`
+
+### Changed
+- Changed validation model in `textvalidator` to Gemini-flash-lite 3.1 to improve response and retrieval speed.
+
+### Fixed
+- Removed service tier option from flex configuration in `textvalidator-gflash3.1`.
+
+---
+
 ## [2026-07-22]
-**Commits:** `e6bdad476` · `ec4b71b34` · `53adacfdd` · `1cc749fe4` · `7ac1dcfdd`
+**Commits:** `2d712c15f` · `e6bdad476` · `ec4b71b34` · `53adacfdd` · `1cc749fe4` · `7ac1dcfdd`
 
 ### Added
 
@@ -19,6 +55,9 @@ This document tracks custom patches and enhancements maintained by Quantrium on 
 
 ### Changed
 
+#### Nuclio Directory Structure
+- Improved directory structure for Nuclio serverless functions by nesting YAML/Python resources under dedicated `nuclio/` subdirectories (`extract_header`, `extract_table`, `sheet_populator`, `template_duplicator`).
+
 #### QSIH-1007 — Async Layout Extractor
 - Refactored `layout_extractor` Nuclio function to operate asynchronously for long-running layout inference tasks.
 
@@ -29,6 +68,10 @@ This document tracks custom patches and enhancements maintained by Quantrium on 
 #### Deployment Configurations & Helm Settings
 - Updated `helm-chart/values.override.yml` to set `functionInvocationTimeout: 5m` and reference local dashboard image.
 - Standardized custom function scanning in `deploy-k8s.sh` to match `serverless/custom/*/nuclio`.
+
+#### Documentation & Git Configurations
+- Renamed patch notes documentation file from `Patch Notes.md` to `PATCH_NOTES.md`.
+- Updated `.gitignore` to ignore local configurations and integration files.
 
 ### Fixed
 

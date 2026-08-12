@@ -69,7 +69,7 @@ async def _call_pocr_structure(image_bytes: bytes) -> dict[str, Any]:
         "file": ("frame.jpg", image_bytes, "image/jpeg"),
     }
 
-    async with httpx.AsyncClient(timeout=30, http2=True) as client:
+    async with httpx.AsyncClient(timeout=60, http2=True) as client:
         response = await client.post(
             STRUCTURE_URL, data=payload, files=files, headers=headers,
         )

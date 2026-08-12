@@ -45,6 +45,15 @@ spec:
         maxConnectionsNumber: 1000
         minConnectionsNumber: 1000
 
+  livenessProbe:
+    httpGet:
+      path: "/ready"
+      port: 8080
+    initialDelaySeconds: 60
+    timeoutSeconds: 60
+    periodSeconds: 60
+    failureThreshold: 10
+
   platform:
     attributes:
       restartPolicy:

@@ -1,16 +1,12 @@
 metadata:
-  name: sheet-populator
+  name: extract-table-with-qc
   namespace: cvat
   annotations:
-    name: Excel Populator (VLM)
-    version: 2
-    type: interactor
-    min_pos_points: 0
-    min_neg_points: -1
-    startswith_box: true
+    name: Extract Table with QC
+    version: 1
 
 spec:
-  description: Extract Header/Extract Table/Extract Table with QC
+  description: Internal VLM function - read rows of table, populates sheet
   runtime: 'python:3.11'
   handler: main:handler
   eventTimeout: 300s
@@ -21,7 +17,7 @@ spec:
     - level: "info"
 
   build:
-    image: cvat.python.sheet.populator
+    image: cvat.python.extract.table-with-qc
     baseImage: python:3.11-slim
 
     directives:
@@ -29,8 +25,8 @@ spec:
         - kind: RUN
           value: >-
             pip install uv && uv pip install --system --no-cache-dir
-            requests pillow
-            google-auth-oauthlib tenacity httpx[http2] tenacity
+            google-auth-oauthlib tenacity httpx[http2] pillow
+            langchain-openai mlflow-skinny[langchain] pandas
         - kind: WORKDIR
           value: /opt/nuclio
 
@@ -41,6 +37,8 @@ spec:
       async:
         maxConnectionsNumber: 1000
         minConnectionsNumber: 1000
+      attributes:
+        maxRequestBodySize: 33554432 # 32MB
 
   volumes:
     - volume:

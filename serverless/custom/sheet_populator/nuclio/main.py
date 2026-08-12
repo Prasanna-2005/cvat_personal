@@ -48,6 +48,7 @@ else:
     TASK_ROUTE_MAP = {
         "Extract Header": "http://nuclio-nuclio-extract-header:8080",
         "Extract Table": "http://nuclio-nuclio-extract-table:8080",
+        "Extract Table with QC": "http://nuclio-nuclio-extract-table-with-qc:8080"
     }
 
 
@@ -82,12 +83,13 @@ class ContextVariables:
                 return self._client
 
             await asyncio.to_thread(self._creds.refresh, Request())
-            return httpx.AsyncClient(
+            self._client = httpx.AsyncClient(
                 base_url="https://www.googleapis.com/",
                 headers={"Authorization": f"Bearer {self._creds.token}"},
                 http2=True,
-                timeout=30,
+                timeout=60,
             )
+            return self._client
 
     async def get_client(self) -> httpx.AsyncClient:
         if self._client is not None and not self._creds.expired:
@@ -197,17 +199,29 @@ async def duplicate_sheet(
     template_url: str,
     folder_url: str,
     new_file_name: str,
+    task_id: int,
 ):
     template_id = extract_google_id(template_url)
-    folder_id = extract_google_id(folder_url)
+    parent_folder_id = extract_google_id(folder_url)
+    task_folder_id = await get_or_create_folder(
+        cvars, logger, parent_folder_id, task_id
+    )
 
-    logger.info("Duplicating sheet '%s' into folder: '%s'", template_id, folder_id)
+    logger.info(
+        "Duplicating sheet '%s' into task folder '%s' (task_id=%s)",
+        template_id,
+        task_folder_id,
+        task_id,
+    )
 
     escaped_name = new_file_name.replace("'", "\\'")
-    query = f"name = '{escaped_name}' and '{folder_id}' in parents and trashed = false"
+    query = (
+        f"name = '{escaped_name}' and "
+        f"'{task_folder_id}' in parents and trashed = false"
+    )
     existing_files = await list_drive_files(cvars, logger, query)
     logger.info(
-        "Found %d existing files in folder_id=%s", len(existing_files), folder_id
+        "Found %d existing files in task folder_id=%s", len(existing_files), task_folder_id
     )
 
     await asyncio.gather(
@@ -219,7 +233,58 @@ async def duplicate_sheet(
         f"sheet-populator: Batch trashed {len(existing_files)} existing file(s)"
     )
 
-    return await copy_drive_file(cvars, logger, template_id, new_file_name, [folder_id])
+    return await copy_drive_file(
+        cvars, logger, template_id, new_file_name, [task_folder_id]
+    )
+
+@default_retry
+async def get_or_create_folder(
+    cvars: ContextVariables,
+    logger: Logger,
+    parent_id: str,
+    task_id: int,
+) -> str:
+    folder_name = str(task_id)
+    escaped_name = folder_name.replace("'", "\\'")
+    query = (
+        f"'{parent_id}' in parents and "
+        f"name = '{escaped_name}' and "
+        "mimeType = 'application/vnd.google-apps.folder' and "
+        "trashed = false"
+    )
+    client = await cvars.get_client()
+    response = await client.get(
+        "/drive/v3/files",
+        params={
+            "q": query,
+            "fields": "files(id)",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+        },
+    )
+    response.raise_for_status()
+    folders = response.json().get("files", [])
+    if folders:
+        logger.info(
+            "Using existing Drive folder '%s' under parent=%s",
+            folder_name,
+            parent_id,
+        )
+        return folders[0]["id"]
+
+    response = await client.post(
+        "/drive/v3/files",
+        params={"supportsAllDrives": "true"},
+        json={
+            "name": folder_name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_id],
+        },
+    )
+    response.raise_for_status()
+    folder_id = response.json()["id"]
+    logger.info("Created Drive folder '%s' under parent=%s", folder_name, parent_id)
+    return folder_id
 
 
 async def invoke_downstream(
@@ -251,6 +316,9 @@ class XDataFunctionPayload(TypedDict):
     folder_url: str
     new_file_name: str
     ai_task: str | None
+    task: int
+    job: int
+    obj_bbox: list
 
 
 async def handler(context: Context, event):
@@ -267,23 +335,17 @@ async def handler(context: Context, event):
     if isinstance(data, bytes):
         data = json.loads(data.decode("utf-8"))
 
-    image_b64 = data.get("image")
-
     payload: XDataFunctionPayload = data.get("x-data", {})
-    # context.logger.info(f"payload: {payload} && image_b64: {image_b64[:100]}")
     template_url = payload["template_url"]
     folder_url = payload["folder_url"]
     new_file_name = payload["new_file_name"]
     ai_task = payload.get("ai_task", None)
-
-    if not image_b64:
-        raise ValueError("Missing base64 image in payload.")
-
+    task_id = payload.get("task", None)
     # Sheet - Duplication logic when user presses create button in CVAT-UI
     if not ai_task:
         spreadsheet_id, sheet_url = await duplicate_sheet(
-        cvars, logger, template_url, folder_url, new_file_name
-    )
+            cvars, logger, template_url, folder_url, new_file_name, task_id
+        )
         logger.info("Custom template Duplicated: %s", sheet_url)
         return context.Response(
             body=json.dumps(
@@ -296,36 +358,41 @@ async def handler(context: Context, event):
             status_code=200,
         )
 
-    img_bytes = base64.b64decode(image_b64)
-    img_io = io.BytesIO(img_bytes)
-    image = Image.open(img_io)
-    img_width, img_height = image.size
+    image_b64 = data.get("image")
+    if not image_b64:
+        raise ValueError("Missing base64 image in payload.")
 
-    obj_bbox = payload.get("obj_bbox", [])
-    if len(obj_bbox) >= 2:
-        x1, y1 = obj_bbox[0]
-        x2, y2 = obj_bbox[1]
-    else:
-        x1, y1 = 0, 0
-        x2, y2 = img_width, img_height
+    with io.BytesIO(base64.b64decode(image_b64)) as img_io:
+        with Image.open(img_io) as image:
+            # img_bytes = base64.b64decode(image_b64)
+            # img_io = io.BytesIO(img_bytes)
+            # image = Image.open(img_io)
+            img_width, img_height = image.size
+            obj_bbox = payload.get("obj_bbox", [])
 
-    left = max(0, int(min(x1, x2)))
-    top = max(0, int(min(y1, y2)))
-    right = min(img_width, int(max(x1, x2)))
-    bottom = min(img_height, int(max(y1, y2)))
+            if len(obj_bbox) >= 2:
+                x1, y1 = obj_bbox[0]
+                x2, y2 = obj_bbox[1]
+            else:
+                x1, y1 = 0, 0
+                x2, y2 = img_width, img_height
 
-    cropped_image = image.crop((left, top, right, bottom))
+            left = max(0, int(min(x1, x2)))
+            top = max(0, int(min(y1, y2)))
+            right = min(img_width, int(max(x1, x2)))
+            bottom = min(img_height, int(max(y1, y2)))
 
-    img_byte_arr = io.BytesIO()
-    cropped_image.save(img_byte_arr, format="PNG")
-    img_byte_arr.seek(0)  # Reset pointer to the start of the stream
+            cropped_image = image.crop((left, top, right, bottom))
 
-    cropped_image_b64 = base64.b64encode(img_byte_arr.getvalue()).decode("utf-8")
+            with io.BytesIO() as img_byte_arr:
+                cropped_image.save(img_byte_arr, format="PNG")
+                img_byte_arr.seek(0)  # Reset pointer to the start of the stream
+                cropped_image_b64 = base64.b64encode(img_byte_arr.getvalue()).decode("utf-8")
 
     downstream_url = TASK_ROUTE_MAP[ai_task]
 
     spreadsheet_id, sheet_url = await duplicate_sheet(
-        cvars, logger, template_url, folder_url, new_file_name
+        cvars, logger, template_url, folder_url, new_file_name, task_id
     )
     logger.info("Duplicated sheet '%s' with url '%s'", spreadsheet_id, sheet_url)
 

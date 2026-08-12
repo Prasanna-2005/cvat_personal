@@ -99,10 +99,27 @@ cvat:
   # K8s httpGet encodes "?" as %3F, so /health?bundles becomes a 404 path.
   opa:
     probePath: /health
+    readinessProbe:
+      enabled: true
+      periodSeconds: 60
+      initialDelaySeconds: 60
+    livenessProbe:
+      enabled: true
+      periodSeconds: 60
+      initialDelaySeconds: 60
   backend:
     image: cvat/server
     tag: v2.69.0-local
     imagePullPolicy: Never
+    readinessProbe:
+      enabled: true
+      periodSeconds: 60
+      initialDelaySeconds: 60
+    livenessProbe:
+      enabled: true
+      periodSeconds: 60
+      failureThreshold: 5
+      initialDelaySeconds: 120
     permissionFix:
       enabled: false
     defaultStorage:
@@ -175,6 +192,12 @@ cvat:
             name: cvat-secrets
             key: MLFLOW_TRACKING_PASSWORD
     worker:
+      livenessProbe:
+        enabled: true
+        periodSeconds: 300
+        initialDelaySeconds: 60
+        timeoutSeconds: 120
+        failureThreshold: 10
       export:
         replicas: 1
       import:
@@ -182,6 +205,14 @@ cvat:
       chunks:
         replicas: 1
   kvrocks:
+    readinessProbe:
+      enabled: true
+      periodSeconds: 60
+      initialDelaySeconds: 60
+    livenessProbe:
+      enabled: true
+      periodSeconds: 60
+      initialDelaySeconds: 60
     defaultStorage:
       enabled: false
     additionalVolumes:
@@ -194,3 +225,11 @@ cvat:
     # Matches local docker tag (no "v" prefix).
     tag: 2.69.0-local
     imagePullPolicy: Never
+    readinessProbe:
+      enabled: true
+      periodSeconds: 60
+      failureThreshold: 5
+    livenessProbe:
+      enabled: true
+      periodSeconds: 60
+      failureThreshold: 5

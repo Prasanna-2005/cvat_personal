@@ -35,7 +35,7 @@ spec:
     myHttpTrigger:
       numWorkers: 2
       kind: 'http'
-      workerAvailabilityTimeoutMilliseconds: 10000
+      workerAvailabilityTimeoutMilliseconds: 60000
       attributes:
         maxRequestBodySize: 33554432 # 32MB
 
@@ -48,6 +48,15 @@ spec:
         name: sheets-creds
         mountPath: /opt/nuclio/creds
         readOnly: true
+
+  livenessProbe:
+    httpGet:
+      path: "/ready"
+      port: 8080
+    initialDelaySeconds: 60
+    timeoutSeconds: 60
+    periodSeconds: 60
+    failureThreshold: 10
 
   platform:
     attributes:

@@ -50,6 +50,15 @@ spec:
         mountPath: /opt/nuclio/creds
         readOnly: true
 
+  livenessProbe:
+    httpGet:
+      path: "/ready"
+      port: 8080
+    initialDelaySeconds: 60
+    timeoutSeconds: 60
+    periodSeconds: 60
+    failureThreshold: 10
+
   platform:
     attributes:
       restartPolicy:
