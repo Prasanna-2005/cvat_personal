@@ -207,6 +207,10 @@ async def run_validation_pipeline(
     base_llm = ChatOpenAI(
         model="google/gemini-3.1-flash-lite",
         base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://cvat.quantrium.ai",
+            "X-OpenRouter-Title": "CVAT-DEV",
+        },
         extra_body={"service_tier": "flex"},
         rate_limiter=rate_limiter,
         temperature=0.1

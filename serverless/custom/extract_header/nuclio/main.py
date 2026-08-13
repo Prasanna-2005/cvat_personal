@@ -119,17 +119,15 @@ def init_context(context: Context):
     )
 
     vlm = ChatOpenAI(
-        model="google/gemma-4-26B-A4B-it",
+        model="google/gemini-3.1-flash-lite",
         base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://cvat.quantrium.ai",
+            "X-OpenRouter-Title": "CVAT-DEV",
+        },
         temperature=0.1,
         rate_limiter=rate_limiter,
-        extra_body={
-            "provider": {
-                "require_parameters": True,
-                "only": ["google-vertex"],
-                "allow_fallbacks": False,
-            }
-        },
+        max_completion_tokens=10000,
     )
     ContextVariables(vlm).set_cvars(context)
     logger.info("extract-header: initialization complete.")

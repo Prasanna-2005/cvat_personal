@@ -135,6 +135,10 @@ def init_context(context: Context):
     vlm = ChatOpenAI(
         model="google/gemini-3.1-flash-lite",
         base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://cvat.quantrium.ai",
+            "X-OpenRouter-Title": "CVAT-DEV",
+        },
         temperature=0.1,
         rate_limiter=rate_limiter,
         max_completion_tokens=10000,
@@ -143,6 +147,10 @@ def init_context(context: Context):
     mistral_vlm = ChatOpenAI(
         model="mistralai/mistral-small-2603",
         base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://cvat.quantrium.ai",
+            "X-OpenRouter-Title": "CVAT-DEV",
+        },
         temperature=0.1,
         rate_limiter=rate_limiter,
         max_completion_tokens=10000,
@@ -394,7 +402,7 @@ _WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
 _TEXT_RED = {"red": 1.0, "green": 0.0, "blue": 0.0}  # Standard full red
 _TEXT_GREEN = {"red": 0.2039, "green": 0.6588, "blue": 0.3255}  # Custom green
 
-_BG_GRAY = {"red": 0.95, "green": 0.95, "blue": 0.95}   # light grey 
+_BG_GRAY = {"red": 0.95, "green": 0.95, "blue": 0.95}   # light grey
 _BG_YELLOW = {"red": 1.0, "green": 1.0, "blue": 0.8}      # yellow
 
 
@@ -515,7 +523,7 @@ def run_qc_comparison(
             "primary_text_format_runs": primary_runs,
             "matched_text_format_runs": matched_runs,
         })
-        
+
 
     return annotations
 
