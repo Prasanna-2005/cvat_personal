@@ -49,6 +49,7 @@ from .cache import get_cache
 from .const import WORKING_TIME_RESOLUTION, WORKING_TIME_SCOPE
 from .event import event_scope, get_remote_addr, record_server_event
 from .utils import (
+    compute_iframe_working_time_per_ids,
     compute_interactor_response_time_per_ids,
     compute_working_time_per_ids,
 )
@@ -726,6 +727,7 @@ def handle_client_events_push(request, data: dict):
     org = request.iam_context["organization"]
 
     working_time_per_ids = compute_working_time_per_ids(data)
+    iframe_working_time_per_ids = compute_iframe_working_time_per_ids(data)
     interactor_ms_per_ids = compute_interactor_response_time_per_ids(data)
 
     if data["events"]:
@@ -737,7 +739,11 @@ def handle_client_events_push(request, data: dict):
             "org_slug": getattr(org, "slug", None),
         }
 
-        all_ids = set(working_time_per_ids) | set(interactor_ms_per_ids)
+        all_ids = (
+            set(working_time_per_ids)
+            | set(iframe_working_time_per_ids)
+            | set(interactor_ms_per_ids)
+        )
         job_ids = {job_id for job_id, _task_id, _project_id, _frame in all_ids if job_id is not None}
         # Resolve stage / task / project from Job so Sheets events (no project_id)
         # land on the same ClickHouse keys as CVAT UI events.
@@ -754,6 +760,11 @@ def handle_client_events_push(request, data: dict):
             working_ms = (
                 working_time["value"] // WORKING_TIME_RESOLUTION if working_time else 0
             )
+            iframe_time = iframe_working_time_per_ids.get(ids)
+            iframe_ms = (
+                iframe_time["value"] // WORKING_TIME_RESOLUTION if iframe_time else 0
+            )
+            working_ms += iframe_ms
             meta = job_meta.get(job_id) or {}
             stage = meta.get("stage")
             if task_id is None:
@@ -773,13 +784,19 @@ def handle_client_events_push(request, data: dict):
                 payload["stage"] = stage
             if frame is not None:
                 payload["frame"] = frame
+            if iframe_ms:
+                payload["iframe_working_time"] = iframe_ms
             if interactor_ms:
                 payload["interactor_response_time"] = interactor_ms
 
             event_timestamp = (
                 working_time["timestamp"]
                 if working_time
-                else data["events"][-1]["timestamp"]
+                else (
+                    iframe_time["timestamp"]
+                    if iframe_time
+                    else data["events"][-1]["timestamp"]
+                )
             )
 
             record_server_event(

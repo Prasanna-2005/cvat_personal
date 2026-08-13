@@ -658,6 +658,7 @@ export function implementJob(Job: typeof JobClass): typeof JobClass {
                     task_id: this.taskId,
                     job_id: this.id,
                     ...(Number.isInteger(this.activityFrame) ? { frame: this.activityFrame as number } : {}),
+                    ...(this.iframeSessionId ? { iframe_session_id: this.iframeSessionId } : {}),
                 },
                 wait,
             );

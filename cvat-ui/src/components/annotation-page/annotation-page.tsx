@@ -25,6 +25,7 @@ import AudioAnnotationPage from 'audio/components/annotation-page/audio-annotati
 import { Workspace } from 'reducers';
 import { usePrevious } from 'utils/hooks';
 import EventRecorder from 'utils/event-recorder';
+import useIframeWorkingTime from 'utils/use-iframe-working-time';
 import { readLatestFrame } from 'utils/remember-latest-frame';
 import { EventScope } from 'cvat-core/src/enums';
 import SearchFramesModal from './top-bar/search-modal';
@@ -141,6 +142,8 @@ export default function AnnotationPageComponent(props: Props): JSX.Element {
             job.activityFrame = frameNumber;
         }
     }, [job, frameNumber]);
+
+    useIframeWorkingTime(job);
 
     if (job === null || !annotationsInitialized) {
         return <Spin size='large' className='cvat-spinner' />;

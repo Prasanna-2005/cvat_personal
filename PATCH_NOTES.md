@@ -6,6 +6,16 @@ This document tracks custom patches and enhancements maintained by Quantrium on 
 
 # [Released]
 
+## [2026-08-11]
+
+### Added
+- **Sheets side view**: Added a **View** button next to **Open** on `excel_link` attributes. View opens the Google Sheet in an iframe beside the canvas at equal width (50/50 grid), with close restoring the previous layout.
+
+### Fixed
+- **Sheets side view COEP**: Removed `Cross-Origin-Embedder-Policy` from the main CVAT UI document so Google Sheets can be embedded beside the canvas with auth cookies. COEP requires every child frame to opt in; Google does not, and `credentialless` iframes cannot keep Google login. Trade-off: SharedArrayBuffer / ONNX multithreading is unavailable (WASM still runs single-threaded).
+
+---
+
 ## [2026-08-03]
 **Commits:** `c3c69a769` · `cc8d777a1`
 

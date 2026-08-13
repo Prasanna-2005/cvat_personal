@@ -139,6 +139,10 @@ export enum EventScope {
     // Wall-clock wait for interactive AI (interactor) responses.
     // Counted for ok / error / cancelled so active time is not inflated.
     callInteractor = 'call:interactor',
+
+    // Sheets/layout iframe session boundaries for working-time attribution.
+    interactIframeOpen = 'interact:iframe:open',
+    interactIframeClose = 'interact:iframe:close',
 }
 
 export enum HistoryActions {

@@ -10,7 +10,13 @@ from contextlib import suppress
 from django.db.models import Min
 
 from .cache import clear_cache
-from .const import COMPRESSED_EVENT_SCOPES, MAX_EVENT_DURATION, INTERACTOR_RESPONSE_SCOPE
+from .const import (
+    COMPRESSED_EVENT_SCOPES,
+    IFRAME_CLOSE_SCOPE,
+    IFRAME_OPEN_SCOPE,
+    INTERACTOR_RESPONSE_SCOPE,
+    MAX_EVENT_DURATION,
+)
 
 
 def _prepare_objects_to_delete(object_to_delete):
@@ -112,7 +118,35 @@ def read_ids(event: dict) -> tuple[int | None, int | None, int | None, int | Non
     return event.get("job_id"), event.get("task_id"), event.get("project_id"), _event_frame(event)
 
 
+def _iframe_session_id(event: dict) -> str | None:
+    payload = _parse_payload(event)
+    raw = payload.get("iframe_session_id", payload.get("iframe_id"))
+    if raw is None or raw == "":
+        return None
+    return str(raw)
+
+
+def _skips_normal_working_time(event: dict) -> bool:
+    """
+    Iframe close duration is counted separately. Activity inside an iframe
+    session must not add a second copy of the same interval.
+    """
+    scope = event.get("scope")
+    if scope == IFRAME_CLOSE_SCOPE:
+        return True
+    if scope == IFRAME_OPEN_SCOPE:
+        return False
+    return _iframe_session_id(event) is not None
+
+
 def compute_working_time_per_ids(data: dict) -> dict:
+    """
+    Incrementally compute normal working time per (job, task, project, frame).
+
+    Iframe-close duration is excluded here; use compute_iframe_working_time_per_ids
+    for that contribution. The cursor still advances across iframe events so
+    later activity does not bridge from a pre-iframe timestamp.
+    """
     if previous_event := data["previous_event"]:
         previous_end_timestamp = get_end_timestamp(previous_event)
         previous_ids = read_ids(previous_event)
@@ -124,18 +158,23 @@ def compute_working_time_per_ids(data: dict) -> dict:
     for event in data["events"]:
         working_time = datetime.timedelta()
         timestamp = event["timestamp"]
-
-        if timestamp > previous_end_timestamp:
-            t_diff = timestamp - previous_end_timestamp
-            if t_diff < MAX_EVENT_DURATION:
-                working_time += t_diff
-
-            previous_end_timestamp = timestamp
-
         end_timestamp = get_end_timestamp(event)
-        if end_timestamp > previous_end_timestamp:
-            working_time += end_timestamp - previous_end_timestamp
-            previous_end_timestamp = end_timestamp
+
+        if _skips_normal_working_time(event):
+            cursor = max(timestamp, end_timestamp)
+            if cursor > previous_end_timestamp:
+                previous_end_timestamp = cursor
+        else:
+            if timestamp > previous_end_timestamp:
+                t_diff = timestamp - previous_end_timestamp
+                if t_diff < MAX_EVENT_DURATION:
+                    working_time += t_diff
+
+                previous_end_timestamp = timestamp
+
+            if end_timestamp > previous_end_timestamp:
+                working_time += end_timestamp - previous_end_timestamp
+                previous_end_timestamp = end_timestamp
 
         if previous_ids not in working_time_per_ids:
             working_time_per_ids[previous_ids] = {
@@ -147,6 +186,34 @@ def compute_working_time_per_ids(data: dict) -> dict:
         previous_ids = read_ids(event)
 
     return working_time_per_ids
+
+
+def compute_iframe_working_time_per_ids(data: dict) -> dict:
+    """
+    Sum completed iframe session durations per (job, task, project, frame).
+
+    Each interact:iframe:close event contributes its full duration. The normal
+    inactivity threshold and previous_end_timestamp are not applied.
+    """
+    iframe_working_time_per_ids: dict[tuple, dict] = {}
+    for event in data.get("events") or []:
+        if event.get("scope") != IFRAME_CLOSE_SCOPE:
+            continue
+        try:
+            duration_ms = int(event.get("duration") or 0)
+        except (TypeError, ValueError):
+            continue
+        if duration_ms <= 0:
+            continue
+        ids = read_ids(event)
+        duration = datetime.timedelta(milliseconds=duration_ms)
+        if ids not in iframe_working_time_per_ids:
+            iframe_working_time_per_ids[ids] = {
+                "value": datetime.timedelta(),
+                "timestamp": event["timestamp"],
+            }
+        iframe_working_time_per_ids[ids]["value"] += duration
+    return iframe_working_time_per_ids
 
 
 def compute_interactor_response_time_per_ids(data: dict) -> dict:

@@ -599,6 +599,8 @@ export class Job extends Session {
 
     // Current annotation frame for working-time attribution (not persisted on the job model).
     public activityFrame: number | null = null;
+    // Active sheets iframe session, set by the UI from sheetsSideViewUrl transitions.
+    public iframeSessionId: string | null = null;
 
     constructor(initialData: InitializerType) {
         super();
