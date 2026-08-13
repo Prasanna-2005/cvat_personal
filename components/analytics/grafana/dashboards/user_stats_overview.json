@@ -75,8 +75,13 @@
         "footer": {
           "countRows": false,
           "enablePagination": true,
-          "fields": ["Working time(h)", "Activity"],
-          "reducer": ["sum"],
+          "fields": [
+            "Working time(h)",
+            "Activity"
+          ],
+          "reducer": [
+            "sum"
+          ],
           "show": true
         },
         "showHeader": true,
@@ -103,7 +108,7 @@
           },
           "pluginVersion": "4.8.2",
           "queryType": "table",
-          "rawSql": "SELECT\r\n    project_id AS \"Project ID\",\r\n    -- Total number of unique tasks in the project\r\n    count(DISTINCT task_id) AS \"Total Tasks\",\r\n    -- Total number of unique jobs in the project\r\n    count(DISTINCT job_id) AS \"Total Jobs\",\r\n    -- Average working time per job across the project\r\n    concat(\r\n        toString(floor(avg(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((avg(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm'\r\n    ) AS \"Avg Time per Job\",\r\n    -- Total cumulative time spent on the project\r\n    concat(\r\n        toString(floor(sum(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((sum(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm'\r\n    ) AS \"Total Time Spent\"\r\nFROM (\r\n    -- Subquery to get total time per job first\r\n    SELECT\r\n        project_id,\r\n        job_id,\r\n        task_id,\r\n        sum(JSONExtractUInt(payload, 'working_time')) AS job_total_ms\r\n    FROM events\r\n    WHERE JSONHas(payload, 'working_time')\r\n      AND $__timeFilter(timestamp)\r\n      AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n      AND task_id IN (${tasks})\r\n      AND job_id IN (${jobs})\r\n    GROUP BY project_id, task_id, job_id\r\n)\r\nGROUP BY project_id\r\nORDER BY sum(job_total_ms) DESC",
+          "rawSql": "SELECT\r\n    project_id AS \"Project ID\",\r\n    -- Total number of unique tasks in the project\r\n    count(DISTINCT task_id) AS \"Total Tasks\",\r\n    -- Total number of unique jobs in the project\r\n    count(DISTINCT job_id) AS \"Total Jobs\",\r\n    -- Average working time per job across the project\r\n    concat(\r\n        toString(floor(avg(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((avg(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm ',\r\n        toString(floor(avg(job_total_ms) / 1000 % 60)), \r\n        's'\r\n    ) AS \"Avg Time per Job\",\r\n    -- Total cumulative time spent on the project\r\n    concat(\r\n        toString(floor(sum(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((sum(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm ',\r\n        toString(floor(sum(job_total_ms) / 1000 % 60)), \r\n        's'\r\n    ) AS \"Total Time Spent\"\r\nFROM (\r\n    -- Subquery to get total time per job first\r\n    SELECT\r\n        project_id,\r\n        job_id,\r\n        task_id,\r\n        sum(JSONExtractUInt(payload, 'working_time')) AS job_total_ms\r\n    FROM events\r\n    WHERE JSONHas(payload, 'working_time')\r\n      AND $__timeFilter(timestamp)\r\n      AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n      AND task_id IN (${tasks})\r\n      AND job_id IN (${jobs})\r\n    GROUP BY project_id, task_id, job_id\r\n)\r\nGROUP BY project_id\r\nORDER BY sum(job_total_ms) DESC",
           "refId": "A"
         }
       ],
@@ -157,8 +162,13 @@
         "footer": {
           "countRows": false,
           "enablePagination": true,
-          "fields": ["Working time(h)", "Activity"],
-          "reducer": ["sum"],
+          "fields": [
+            "Working time(h)",
+            "Activity"
+          ],
+          "reducer": [
+            "sum"
+          ],
           "show": true
         },
         "showHeader": true,
@@ -185,7 +195,7 @@
           },
           "pluginVersion": "4.8.2",
           "queryType": "table",
-          "rawSql": "SELECT\r\n    user_id AS \"User ID\",\r\n    user_name AS \"Username\",\r\n    project_id AS \"Project ID\",\r\n    task_id AS \"Task ID\",\r\n    -- Total Time Spent (Formatted)\r\n    concat(\r\n        toString(floor(sum(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((sum(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm'\r\n    ) AS \"Total Time Spent\",\r\n    -- Average Time per Job (Formatted)\r\n    concat(\r\n        toString(floor(avg(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((avg(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm'\r\n    ) AS \"Avg Time per Job\",\r\n    -- Number of unique jobs\r\n    count(DISTINCT job_id) AS \"Jobs Worked\",\r\n    -- Average Activity Counts per Job\r\n    round(avg(event_count), 2) AS \"Avg Activity per Job\",\r\n    -- Total Activity (Summed from the subquery)\r\n    sum(event_count) AS \"Total Activity Count\"\r\nFROM (\r\n    -- Subquery: Aggregate time and events at the Job level first\r\n    SELECT\r\n        user_id,\r\n        user_name,\r\n        project_id,\r\n        task_id,\r\n        job_id,\r\n        sum(JSONExtractUInt(payload, 'working_time')) AS job_total_ms,\r\n        count() as event_count\r\n    FROM events\r\n    WHERE JSONHas(payload, 'working_time')\r\n      AND $__timeFilter(timestamp)\r\n      AND (-1 IN (${users}) OR user_id IN (${users}))\r\n      AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n      AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n      AND (task_id IN (${tasks}))\r\n      AND (job_id IN (${jobs}))\r\n    GROUP BY user_id, user_name, project_id, task_id, job_id\r\n)\r\nGROUP BY user_id, user_name, project_id, task_id\r\nORDER BY sum(job_total_ms) DESC",
+          "rawSql": "SELECT\r\n    user_id AS \"User ID\",\r\n    user_name AS \"Username\",\r\n    project_id AS \"Project ID\",\r\n    task_id AS \"Task ID\",\r\n    -- Total Time Spent (Formatted)\r\n    concat(\r\n        toString(floor(sum(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((sum(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm ',\r\n        toString(floor(sum(job_total_ms) / 1000 % 60)), \r\n        's'\r\n    ) AS \"Total Time Spent\",\r\n    -- Average Time per Job (Formatted)\r\n    concat(\r\n        toString(floor(avg(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((avg(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm ',\r\n        toString(floor(avg(job_total_ms) / 1000 % 60)), \r\n        's'\r\n    ) AS \"Avg Time per Job\",\r\n    -- Number of unique jobs\r\n    count(DISTINCT job_id) AS \"Jobs Worked\",\r\n    -- Average Activity Counts per Job\r\n    round(avg(event_count), 2) AS \"Avg Activity per Job\",\r\n    -- Total Activity (Summed from the subquery)\r\n    sum(event_count) AS \"Total Activity Count\"\r\nFROM (\r\n    -- Subquery: Aggregate time and events at the Job level first\r\n    SELECT\r\n        user_id,\r\n        user_name,\r\n        project_id,\r\n        task_id,\r\n        job_id,\r\n        sum(JSONExtractUInt(payload, 'working_time')) AS job_total_ms,\r\n        count() as event_count\r\n    FROM events\r\n    WHERE JSONHas(payload, 'working_time')\r\n      AND $__timeFilter(timestamp)\r\n      AND (-1 IN (${users}) OR user_id IN (${users}))\r\n      AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n      AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n      AND (task_id IN (${tasks}))\r\n      AND (job_id IN (${jobs}))\r\n    GROUP BY user_id, user_name, project_id, task_id, job_id\r\n)\r\nGROUP BY user_id, user_name, project_id, task_id\r\nORDER BY sum(job_total_ms) DESC",
           "refId": "A"
         }
       ],
@@ -239,8 +249,13 @@
         "footer": {
           "countRows": false,
           "enablePagination": true,
-          "fields": ["Working time(h)", "Activity"],
-          "reducer": ["sum"],
+          "fields": [
+            "Working time(h)",
+            "Activity"
+          ],
+          "reducer": [
+            "sum"
+          ],
           "show": true
         },
         "showHeader": true,
@@ -267,7 +282,7 @@
           },
           "pluginVersion": "4.8.2",
           "queryType": "table",
-          "rawSql": "SELECT\r\n    user_id AS \"User ID\",\r\n    user_name AS \"Username\",\r\n    project_id AS \"Project ID\",\r\n    task_id AS \"Task ID\",\r\n    -- Average time spent per job within THIS specific task\r\n    concat(\r\n        toString(floor(avg(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((avg(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm'\r\n    ) AS \"Avg Time per Job\",\r\n    -- How many jobs that user did inside this task\r\n    count(job_id) AS \"Jobs in Task\",\r\n    -- Total time spent by this user on this specific task\r\n    concat(\r\n        toString(floor(sum(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((sum(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm'\r\n    ) AS \"Total Task Time\"\r\nFROM (\r\n    SELECT\r\n        user_id,\r\n        user_name,\r\n        project_id,\r\n        task_id,\r\n        job_id,\r\n        sum(JSONExtractUInt(payload, 'working_time')) AS job_total_ms\r\n    FROM events\r\n    WHERE JSONHas(payload, 'working_time')\r\n      AND $__timeFilter(timestamp)\r\n      AND (-1 IN (${users}) OR user_id IN (${users}))\r\n      AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n      AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n      AND task_id IN (${tasks})\r\n      AND job_id IN (${jobs})\r\n    GROUP BY user_id, user_name, project_id, task_id, job_id\r\n)\r\nGROUP BY user_id, user_name, project_id, task_id\r\nORDER BY user_name ASC, \"Avg Time per Job\" DESC",
+          "rawSql": "SELECT\r\n    user_id AS \"User ID\",\r\n    user_name AS \"Username\",\r\n    project_id AS \"Project ID\",\r\n    task_id AS \"Task ID\",\r\n    -- Average time spent per job within THIS specific task\r\n    concat(\r\n        toString(floor(avg(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((avg(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm ',\r\n        toString(floor(avg(job_total_ms) / 1000 % 60)), \r\n        's'\r\n    ) AS \"Avg Time per Job\",\r\n    -- How many jobs that user did inside this task\r\n    count(job_id) AS \"Jobs in Task\",\r\n    -- Total time spent by this user on this specific task\r\n    concat(\r\n        toString(floor(sum(job_total_ms) / 1000 / 3600)), \r\n        'h ',\r\n        toString(floor((sum(job_total_ms) / 1000 % 3600) / 60)), \r\n        'm ',\r\n        toString(floor(sum(job_total_ms) / 1000 % 60)), \r\n        's'\r\n    ) AS \"Total Task Time\"\r\nFROM (\r\n    SELECT\r\n        user_id,\r\n        user_name,\r\n        project_id,\r\n        task_id,\r\n        job_id,\r\n        sum(JSONExtractUInt(payload, 'working_time')) AS job_total_ms\r\n    FROM events\r\n    WHERE JSONHas(payload, 'working_time')\r\n      AND $__timeFilter(timestamp)\r\n      AND (-1 IN (${users}) OR user_id IN (${users}))\r\n      AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n      AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n      AND task_id IN (${tasks})\r\n      AND job_id IN (${jobs})\r\n    GROUP BY user_id, user_name, project_id, task_id, job_id\r\n)\r\nGROUP BY user_id, user_name, project_id, task_id\r\nORDER BY user_name ASC, \"Avg Time per Job\" DESC",
           "refId": "A"
         }
       ],
@@ -321,8 +336,13 @@
         "footer": {
           "countRows": false,
           "enablePagination": true,
-          "fields": ["Working time(h)", "Activity"],
-          "reducer": ["sum"],
+          "fields": [
+            "Working time(h)",
+            "Activity"
+          ],
+          "reducer": [
+            "sum"
+          ],
           "show": true
         },
         "showHeader": true,
@@ -349,7 +369,7 @@
           },
           "pluginVersion": "4.8.2",
           "queryType": "table",
-          "rawSql": "SELECT\r\n  user_id as User,\r\n  user_name as Username,\r\n  project_id as Project,\r\n  task_id as Task,\r\n  job_id as Job,\r\n  concat(\r\n    toString(floor(sum(JSONExtractUInt(payload, 'working_time')) / 1000 / 3600)), \r\n    'h ',\r\n    toString(floor((sum(JSONExtractUInt(payload, 'working_time')) / 1000 % 3600) / 60)), \r\n    'm'\r\n  ) AS \"Working time(h)\",\r\n  count() as Activity\r\nFROM events\r\nWHERE JSONHas(payload, 'working_time')\r\n  AND $__timeFilter(timestamp)\r\n  AND(-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\nGROUP BY user_id, user_name, project_id, task_id, job_id",
+          "rawSql": "SELECT\r\n  user_id as User,\r\n  user_name as Username,\r\n  project_id as Project,\r\n  task_id as Task,\r\n  job_id as Job,\r\n  concat(\r\n    toString(floor(sum(JSONExtractUInt(payload, 'working_time')) / 1000 / 3600)), \r\n    'h ',\r\n    toString(floor((sum(JSONExtractUInt(payload, 'working_time')) / 1000 % 3600) / 60)), \r\n    'm ',\r\n    toString(floor(sum(JSONExtractUInt(payload, 'working_time')) / 1000 % 60)), \r\n    's'\r\n  ) AS \"Working time(h)\",\r\n  count() as Activity\r\nFROM events\r\nWHERE JSONHas(payload, 'working_time')\r\n  AND $__timeFilter(timestamp)\r\n  AND(-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\nGROUP BY user_id, user_name, project_id, task_id, job_id",
           "refId": "A"
         }
       ],
@@ -422,7 +442,9 @@
               "id": "byNames",
               "options": {
                 "mode": "exclude",
-                "names": ["User 1"],
+                "names": [
+                  "User 1"
+                ],
                 "prefix": "All except:",
                 "readOnly": true
               }
@@ -465,7 +487,9 @@
           "builderOptions": {
             "fields": [],
             "filters": [],
-            "groupBy": ["user_id"],
+            "groupBy": [
+              "user_id"
+            ],
             "metrics": [
               {
                 "aggregation": "count",
@@ -489,7 +513,9 @@
             "builderOptions": {
               "fields": [],
               "filters": [],
-              "groupBy": ["user_id"],
+              "groupBy": [
+                "user_id"
+              ],
               "metrics": [
                 {
                   "aggregation": "count",
@@ -632,8 +658,12 @@
         "allValue": "-1",
         "current": {
           "selected": false,
-          "text": ["All"],
-          "value": ["$__all"]
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
         "datasource": {
           "type": "grafana-clickhouse-datasource",
@@ -657,8 +687,12 @@
         "allValue": "' '",
         "current": {
           "selected": false,
-          "text": ["All"],
-          "value": ["$__all"]
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
         "datasource": {
           "type": "grafana-clickhouse-datasource",
@@ -682,8 +716,12 @@
         "allValue": "-1",
         "current": {
           "selected": false,
-          "text": ["All"],
-          "value": ["$__all"]
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
         "datasource": {
           "type": "grafana-clickhouse-datasource",
@@ -706,8 +744,12 @@
       {
         "current": {
           "selected": false,
-          "text": ["All"],
-          "value": ["$__all"]
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
         "datasource": {
           "type": "grafana-clickhouse-datasource",
@@ -731,8 +773,12 @@
       {
         "current": {
           "selected": false,
-          "text": ["All"],
-          "value": ["$__all"]
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
         "datasource": {
           "type": "grafana-clickhouse-datasource",

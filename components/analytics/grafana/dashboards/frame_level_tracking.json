@@ -1,0 +1,546 @@
+{
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": {
+                    "type": "grafana",
+                    "uid": "-- Grafana --"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "target": {
+                    "limit": 100,
+                    "matchAny": false,
+                    "tags": [],
+                    "type": "dashboard"
+                },
+                "type": "dashboard"
+            }
+        ]
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "datasource": {
+                "type": "grafana-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "custom": {
+                        "align": "auto",
+                        "cellOptions": {
+                            "type": "auto"
+                        },
+                        "filterable": false,
+                        "inspect": true
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 13,
+                "w": 24,
+                "x": 0,
+                "y": 11
+            },
+            "id": 1,
+            "options": {
+                "cellHeight": "sm",
+                "footer": {
+                    "countRows": false,
+                    "enablePagination": true,
+                    "fields": [
+                        "Hours"
+                    ],
+                    "reducer": [
+                        "sum"
+                    ],
+                    "show": true
+                },
+                "showHeader": true,
+                "sortBy": []
+            },
+            "pluginVersion": "10.1.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "editorType": "sql",
+                    "format": 1,
+                    "meta": {
+                        "builderOptions": {
+                            "columns": [],
+                            "database": "",
+                            "limit": 100,
+                            "mode": "list",
+                            "queryType": "table",
+                            "table": ""
+                        }
+                    },
+                    "pluginVersion": "4.8.2",
+                    "queryType": "table",
+                    "rawSql": "SELECT\r\n  user_id AS `User ID`,\r\n  user_name AS `Username`,\r\n  job_id AS `Job ID`,\r\n  frame AS `Frame`,\r\n  concat(toString(floor(sum(working_ms) / 1000 / 3600)), 'h ', toString(floor((sum(working_ms) / 1000 % 3600) / 60)), 'm ', toString(floor(sum(working_ms) / 1000 % 60)), 's') AS `Working hours`,\r\n  concat(toString(floor(sum(iframe_ms) / 1000 / 3600)), 'h ', toString(floor((sum(iframe_ms) / 1000 % 3600) / 60)), 'm ', toString(floor(sum(iframe_ms) / 1000 % 60)), 's') AS `Iframe hours`,\r\n  concat(toString(floor(sum(interactor_ms) / 1000 / 3600)), 'h ', toString(floor((sum(interactor_ms) / 1000 % 3600) / 60)), 'm ', toString(floor(sum(interactor_ms) / 1000 % 60)), 's') AS `Interactor seconds`\r\nFROM (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    job_id,\r\n    JSONExtractUInt(payload, 'frame') AS frame,\r\n    duration AS working_ms,\r\n    JSONExtractUInt(payload, 'iframe_working_time') AS iframe_ms,\r\n    JSONExtractUInt(payload, 'interactor_response_time') AS interactor_ms\r\n  FROM events\r\n  WHERE scope = 'send:working_time'\r\n    AND JSONHas(payload, 'frame')\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n)\r\nGROUP BY user_id, user_name, job_id, frame\r\nORDER BY user_name ASC, job_id ASC, frame ASC",
+                    "refId": "A"
+                }
+            ],
+            "title": "Working time by user \u00d7 job \u00d7 frame",
+            "type": "table",
+            "description": "Frame-level working time. `Working hours` = total. `Iframe hours` = sheets iframe contribution (payload.iframe_working_time). `Interactor seconds` = AI model wait."
+        },
+        {
+            "datasource": {
+                "type": "grafana-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "custom": {
+                        "align": "auto",
+                        "cellOptions": {
+                            "type": "auto"
+                        },
+                        "filterable": false,
+                        "inspect": true
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 13,
+                "w": 24,
+                "x": 0,
+                "y": 11
+            },
+            "id": 1,
+            "options": {
+                "cellHeight": "sm",
+                "footer": {
+                    "countRows": false,
+                    "enablePagination": true,
+                    "fields": [
+                        "Hours"
+                    ],
+                    "reducer": [
+                        "sum"
+                    ],
+                    "show": true
+                },
+                "showHeader": true,
+                "sortBy": []
+            },
+            "pluginVersion": "10.1.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "editorType": "sql",
+                    "format": 1,
+                    "meta": {
+                        "builderOptions": {
+                            "columns": [],
+                            "database": "",
+                            "limit": 100,
+                            "mode": "list",
+                            "queryType": "table",
+                            "table": ""
+                        }
+                    },
+                    "pluginVersion": "4.8.2",
+                    "queryType": "table",
+                    "rawSql": "SELECT\r\n  user_id AS `User ID`,\r\n  user_name AS `Username`,\r\n  job_id AS `Job ID`,\r\n   concat(toString(floor(sum(working_ms) / 1000 / 3600)), 'h ', toString(floor((sum(working_ms) / 1000 % 3600) / 60)), 'm ', toString(floor(sum(working_ms) / 1000 % 60)), 's') AS `Working hours`,\r\n  concat(toString(floor(sum(iframe_ms) / 1000 / 3600)), 'h ', toString(floor((sum(iframe_ms) / 1000 % 3600) / 60)), 'm ', toString(floor(sum(iframe_ms) / 1000 % 60)), 's') AS `Iframe hours`,\r\n  concat(toString(floor(sum(interactor_ms) / 1000 / 3600)), 'h ', toString(floor((sum(interactor_ms) / 1000 % 3600) / 60)), 'm ', toString(floor(sum(interactor_ms) / 1000 % 60)), 's') AS `Interactor seconds`\r\nFROM (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    job_id,\r\n    duration AS working_ms,\r\n    JSONExtractUInt(payload, 'iframe_working_time') AS iframe_ms,\r\n    JSONExtractUInt(payload, 'interactor_response_time') AS interactor_ms\r\n  FROM events\r\n  WHERE scope = 'send:working_time'\r\n    AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n)\r\nGROUP BY user_id, user_name, job_id\r\nORDER BY user_name ASC, job_id ASC",
+                    "refId": "A"
+                }
+            ],
+            "title": "Working time by user \u00d7 job",
+            "type": "table",
+            "description": "Frame-level working time. `Working hours` = total. `Iframe hours` = sheets iframe contribution (payload.iframe_working_time). `Interactor seconds` = AI model wait."
+        },
+        {
+            "datasource": {
+                "type": "grafana-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "custom": {
+                        "align": "auto",
+                        "cellOptions": {
+                            "type": "auto"
+                        },
+                        "filterable": false,
+                        "inspect": true
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 13,
+                "w": 24,
+                "x": 0,
+                "y": 63
+            },
+            "id": 3,
+            "options": {
+                "cellHeight": "sm",
+                "footer": {
+                    "countRows": false,
+                    "enablePagination": true,
+                    "fields": [
+                        "Created",
+                        "Deleted",
+                        "Net"
+                    ],
+                    "reducer": [
+                        "sum"
+                    ],
+                    "show": true
+                },
+                "showHeader": true,
+                "sortBy": []
+            },
+            "pluginVersion": "10.1.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "editorType": "sql",
+                    "format": 1,
+                    "meta": {
+                        "builderOptions": {
+                            "columns": [],
+                            "database": "",
+                            "limit": 100,
+                            "mode": "list",
+                            "queryType": "table",
+                            "table": ""
+                        }
+                    },
+                    "pluginVersion": "4.8.2",
+                    "queryType": "table",
+                    "rawSql": "SELECT\r\n  user_id AS `User ID`,\r\n  user_name AS `Username`,\r\n  job_id AS `Job ID`,\r\n  sumIf(count, scope IN ('create:shapes', 'create:tracks', 'create:tags')) AS `Created`,\r\n  sumIf(count, scope IN ('delete:shapes', 'delete:tracks', 'delete:tags')) AS `Deleted`,\r\n  sumIf(count, scope IN ('create:shapes', 'create:tracks', 'create:tags'))\r\n    - sumIf(count, scope IN ('delete:shapes', 'delete:tracks', 'delete:tags')) AS `Net`\r\nFROM events\r\nWHERE scope IN (\r\n  'create:shapes', 'create:tracks', 'create:tags',\r\n  'delete:shapes', 'delete:tracks', 'delete:tags'\r\n)\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\nGROUP BY user_id, user_name, job_id\r\nORDER BY user_name ASC, job_id ASC",
+                    "refId": "A"
+                }
+            ],
+            "title": "Objects created / deleted / net by user \u00d7 job",
+            "type": "table"
+        },
+        {
+            "datasource": {
+                "type": "grafana-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "custom": {
+                        "align": "auto",
+                        "cellOptions": {
+                            "type": "auto"
+                        },
+                        "filterable": false,
+                        "inspect": true
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 13,
+                "w": 24,
+                "x": 0,
+                "y": 76
+            },
+            "id": 4,
+            "options": {
+                "cellHeight": "sm",
+                "footer": {
+                    "countRows": false,
+                    "enablePagination": true,
+                    "fields": [
+                        "Working hours",
+                        "Objects created"
+                    ],
+                    "reducer": [
+                        "sum"
+                    ],
+                    "show": true
+                },
+                "showHeader": true,
+                "sortBy": []
+            },
+            "pluginVersion": "10.1.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "editorType": "sql",
+                    "format": 1,
+                    "meta": {
+                        "builderOptions": {
+                            "columns": [],
+                            "database": "",
+                            "limit": 100,
+                            "mode": "list",
+                            "queryType": "table",
+                            "table": ""
+                        }
+                    },
+                    "pluginVersion": "4.8.2",
+                    "queryType": "table",
+                    "rawSql": "SELECT\r\n  a.user_id AS `User ID`,\r\n  a.user_name AS `Username`,\r\n  concat(toString(floor(a.working_hours)), 'h ', toString(floor((a.working_hours - floor(a.working_hours)) * 60)), 'm ', toString(floor(((a.working_hours - floor(a.working_hours)) * 60 - floor((a.working_hours - floor(a.working_hours)) * 60)) * 60)), 's') AS `Working hours`,\r\n  coalesce(o.objects_created, 0) AS `Objects created`,\r\n  round(coalesce(o.objects_created, 0) / nullIf(a.working_hours, 0), 2) AS `Objects per hour`\r\nFROM (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    sum(duration) / 1000 / 3600 AS working_hours\r\n  FROM events\r\n  WHERE scope = 'send:working_time'\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n  GROUP BY user_id, user_name\r\n) a\r\nLEFT JOIN (\r\n  SELECT\r\n    user_id,\r\n    user_name,\r\n    sum(count) AS objects_created\r\n  FROM events\r\n  WHERE scope IN ('create:shapes', 'create:tracks', 'create:tags')\r\n  AND $__timeFilter(timestamp)\r\n  AND (-1 IN (${users}) OR user_id IN (${users}))\r\n  AND (' ' IN (${usernames}) OR user_name IN (${usernames}))\r\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))\r\n  AND task_id IN (${tasks})\r\n  AND job_id IN (${jobs})\r\n  GROUP BY user_id, user_name\r\n) o USING (user_id, user_name)\r\nORDER BY `Objects per hour` DESC",
+                    "refId": "A"
+                }
+            ],
+            "title": "Annotator speed (objects/hour)",
+            "type": "table"
+        }
+    ],
+    "refresh": "",
+    "schemaVersion": 38,
+    "style": "dark",
+    "tags": [
+        "cvat",
+        "interactor",
+        "working-time"
+    ],
+    "templating": {
+        "list": [
+            {
+                "allValue": "-1",
+                "current": {
+                    "selected": false,
+                    "text": [
+                        "All"
+                    ],
+                    "value": [
+                        "$__all"
+                    ]
+                },
+                "datasource": {
+                    "type": "grafana-clickhouse-datasource",
+                    "uid": "PDEE91DDB90597936"
+                },
+                "definition": "SELECT DISTINCT user_id\nFROM events\nWHERE $__timeFilter(timestamp)\n  AND source = 'client'",
+                "hide": 0,
+                "includeAll": true,
+                "label": "User",
+                "multi": true,
+                "name": "users",
+                "options": [],
+                "query": "SELECT DISTINCT user_id\nFROM events\nWHERE $__timeFilter(timestamp)\n  AND source = 'client'",
+                "refresh": 2,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 1,
+                "type": "query"
+            },
+            {
+                "allValue": "' '",
+                "current": {
+                    "selected": false,
+                    "text": [
+                        "All"
+                    ],
+                    "value": [
+                        "$__all"
+                    ]
+                },
+                "datasource": {
+                    "type": "grafana-clickhouse-datasource",
+                    "uid": "PDEE91DDB90597936"
+                },
+                "definition": "SELECT DISTINCT user_name\nFROM events\nWHERE $__timeFilter(timestamp)",
+                "hide": 0,
+                "includeAll": true,
+                "label": "Username",
+                "multi": true,
+                "name": "usernames",
+                "options": [],
+                "query": "SELECT DISTINCT user_name\nFROM events\nWHERE $__timeFilter(timestamp)",
+                "refresh": 2,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 1,
+                "type": "query"
+            },
+            {
+                "allValue": "-1",
+                "current": {
+                    "selected": false,
+                    "text": [
+                        "All"
+                    ],
+                    "value": [
+                        "$__all"
+                    ]
+                },
+                "datasource": {
+                    "type": "grafana-clickhouse-datasource",
+                    "uid": "PDEE91DDB90597936"
+                },
+                "definition": "SELECT DISTINCT project_id\nFROM events\nWHERE  $__timeFilter(timestamp)\n  AND project_id IS NOT NULL\n  AND source = 'client'",
+                "hide": 0,
+                "includeAll": true,
+                "label": "Project",
+                "multi": true,
+                "name": "projects",
+                "options": [],
+                "query": "SELECT DISTINCT project_id\nFROM events\nWHERE  $__timeFilter(timestamp)\n  AND project_id IS NOT NULL\n  AND source = 'client'",
+                "refresh": 2,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 1,
+                "type": "query"
+            },
+            {
+                "current": {
+                    "selected": false,
+                    "text": [
+                        "All"
+                    ],
+                    "value": [
+                        "$__all"
+                    ]
+                },
+                "datasource": {
+                    "type": "grafana-clickhouse-datasource",
+                    "uid": "PDEE91DDB90597936"
+                },
+                "definition": "SELECT DISTINCT task_id\nFROM events\nWHERE $__timeFilter(timestamp) \n  AND task_id IS NOT NULL\n  AND source = 'client'\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))",
+                "description": "",
+                "hide": 0,
+                "includeAll": true,
+                "label": "Task",
+                "multi": true,
+                "name": "tasks",
+                "options": [],
+                "query": "SELECT DISTINCT task_id\nFROM events\nWHERE $__timeFilter(timestamp) \n  AND task_id IS NOT NULL\n  AND source = 'client'\n  AND (-1 IN (${projects}) OR project_id IN (${projects}))",
+                "refresh": 2,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 1,
+                "type": "query"
+            },
+            {
+                "current": {
+                    "selected": false,
+                    "text": [
+                        "All"
+                    ],
+                    "value": [
+                        "$__all"
+                    ]
+                },
+                "datasource": {
+                    "type": "grafana-clickhouse-datasource",
+                    "uid": "PDEE91DDB90597936"
+                },
+                "definition": "SELECT DISTINCT job_id\nFROM events\nWHERE $__timeFilter(timestamp)\n  AND job_id IS NOT NULL\n  AND source = 'client'\n  AND task_id in (${tasks})",
+                "hide": 0,
+                "includeAll": true,
+                "label": "Job",
+                "multi": true,
+                "name": "jobs",
+                "options": [],
+                "query": "SELECT DISTINCT job_id\nFROM events\nWHERE $__timeFilter(timestamp)\n  AND job_id IS NOT NULL\n  AND source = 'client'\n  AND task_id in (${tasks})",
+                "refresh": 2,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 0,
+                "type": "query"
+            }
+        ]
+    },
+    "time": {
+        "from": "now-7d",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "title": "Frame Active Time (Interactor)",
+    "uid": "frame-active-time-interactor",
+    "version": 1,
+    "weekStart": ""
+}
