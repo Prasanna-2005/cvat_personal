@@ -191,6 +191,7 @@ const defaultState: AnnotationState = {
     appearanceCollapsed: false,
     filtersPanelVisible: false,
     workspace: Workspace.STANDARD,
+    sheetsSideViewUrl: null,
 };
 
 export default (state = defaultState, action: AnyAction): AnnotationState => {
@@ -343,6 +344,18 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 },
             };
         }
+        case AnnotationActionTypes.OPEN_SHEETS_SIDE_VIEW: {
+            return {
+                ...state,
+                sheetsSideViewUrl: action.payload.url,
+            };
+        }
+        case AnnotationActionTypes.CLOSE_SHEETS_SIDE_VIEW: {
+            return {
+                ...state,
+                sheetsSideViewUrl: null,
+            };
+        }
         case JobsActionTypes.UPDATE_JOB_SUCCESS: {
             return {
                 ...state,
@@ -378,6 +391,7 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     ...state.canvas,
                     ready: false,
                 },
+                sheetsSideViewUrl: null,
             };
         }
         case AnnotationActionTypes.CHANGE_FRAME_SUCCESS: {

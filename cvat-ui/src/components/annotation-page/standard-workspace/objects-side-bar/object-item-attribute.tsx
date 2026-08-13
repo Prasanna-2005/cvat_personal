@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useDispatch } from 'react-redux';
 import { Col } from 'antd/lib/grid';
 import Select from 'antd/lib/select';
 import Button from 'antd/lib/button';
@@ -14,6 +15,7 @@ import Text from 'antd/lib/typography/Text';
 import config from 'config';
 import { clamp } from 'utils/math';
 import TextArea, { TextAreaRef } from 'antd/lib/input/TextArea';
+import { openSheetsSideView } from 'actions/annotation-actions';
 
 interface Props {
     readonly: boolean;
@@ -44,6 +46,7 @@ function ItemAttributeComponent(props: Props): JSX.Element {
         attrInputType, attrValues, attrValue,
         attrName, attrID, readonly, changeAttribute, onCreateExcel,
     } = props;
+    const dispatch = useDispatch();
 
     const attrNameStyle: React.CSSProperties = { wordBreak: 'break-word', lineHeight: '1em', fontSize: 12 };
     const ref = useRef<TextAreaRef>(null);
@@ -210,16 +213,28 @@ function ItemAttributeComponent(props: Props): JSX.Element {
                                 Create
                             </Button>
                         ) : (
-                            <Button
-                                type='default'
-                                size='small'
-                                className='cvat-object-item-open-excel-button'
-                                onClick={() => {
-                                    window.open(localAttrValue, '_blank', 'noopener,noreferrer');
-                                }}
-                            >
-                                Open
-                            </Button>
+                            <>
+                                <Button
+                                    type='default'
+                                    size='small'
+                                    className='cvat-object-item-open-excel-button'
+                                    onClick={() => {
+                                        window.open(localAttrValue, '_blank', 'noopener,noreferrer');
+                                    }}
+                                >
+                                    Open
+                                </Button>
+                                <Button
+                                    type='primary'
+                                    size='small'
+                                    className='cvat-object-item-view-excel-button'
+                                    onClick={() => {
+                                        dispatch(openSheetsSideView(localAttrValue));
+                                    }}
+                                >
+                                    View
+                                </Button>
+                            </>
                         )}
                     </div>
                 </Col>

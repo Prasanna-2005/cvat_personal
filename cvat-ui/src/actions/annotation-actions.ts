@@ -167,6 +167,8 @@ export enum AnnotationActionTypes {
     UPDATE_BRUSH_TOOLS_CONFIG = 'UPDATE_BRUSH_TOOLS_CONFIG',
     HIGHLIGHT_CONFLICT = 'HIGHLIGHT_CONFCLICT',
     HOVERED_CHAPTER = 'HOVERED_CHAPTER',
+    OPEN_SHEETS_SIDE_VIEW = 'OPEN_SHEETS_SIDE_VIEW',
+    CLOSE_SHEETS_SIDE_VIEW = 'CLOSE_SHEETS_SIDE_VIEW',
 }
 
 export enum AnnotationSource {
@@ -180,6 +182,22 @@ export function setHoveredChapter(id: number | null): AnyAction {
         payload: {
             id,
         },
+    };
+}
+
+export function openSheetsSideView(url: string): AnyAction {
+    return {
+        type: AnnotationActionTypes.OPEN_SHEETS_SIDE_VIEW,
+        payload: {
+            url,
+        },
+    };
+}
+
+export function closeSheetsSideView(): AnyAction {
+    return {
+        type: AnnotationActionTypes.CLOSE_SHEETS_SIDE_VIEW,
+        payload: {},
     };
 }
 

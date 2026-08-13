@@ -971,6 +971,7 @@ export interface AnnotationState {
     sidebarCollapsed: boolean;
     appearanceCollapsed: boolean;
     workspace: Workspace;
+    sheetsSideViewUrl: string | null;
 }
 
 export enum Workspace {

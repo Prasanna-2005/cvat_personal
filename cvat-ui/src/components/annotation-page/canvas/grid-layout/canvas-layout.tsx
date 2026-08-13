@@ -6,7 +6,7 @@ import './styles.scss';
 import 'react-grid-layout/css/styles.css';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import RGL, { WidthProvider } from 'react-grid-layout';
 import PropTypes from 'prop-types';
 import { isEqual } from 'lodash';
@@ -25,6 +25,7 @@ import config from 'config';
 import { Canvas } from 'cvat-canvas-wrapper';
 import { DimensionType } from 'cvat-core-wrapper';
 import { CombinedState } from 'reducers';
+import { closeSheetsSideView } from 'actions/annotation-actions';
 import CanvasWrapperComponent from 'components/annotation-page/canvas/views/canvas2d/canvas-wrapper';
 import CanvasWrapper3DComponent, {
     PerspectiveViewComponent,
@@ -33,12 +34,34 @@ import CanvasWrapper3DComponent, {
     FrontViewComponent,
 } from 'components/annotation-page/canvas/views/canvas3d/canvas-wrapper3D';
 import ContextImage from 'components/annotation-page/canvas/views/context-image/context-image';
+import SheetsIframe from 'components/annotation-page/canvas/views/sheets-iframe/sheets-iframe';
 import CVATTooltip from 'components/common/cvat-tooltip';
 import { useUpdateEffect } from 'utils/hooks';
 import { shallowEqual } from 'utils/redux';
 import defaultLayout, { ItemLayout, ViewType } from './canvas-layout.conf';
 
 const ReactGridLayout = WidthProvider(RGL);
+const SHEETS_SIDE_PANE_WIDTH = Math.floor(config.CANVAS_WORKSPACE_COLS / 2);
+
+/** 2D only: canvas | Google Sheet at equal width. */
+const buildSheetsSideLayout = (): ItemLayout[] => {
+    const halfWidth = SHEETS_SIDE_PANE_WIDTH;
+    return [{
+        viewType: ViewType.CANVAS,
+        offset: [0],
+        x: 0,
+        y: 0,
+        w: halfWidth,
+        h: config.CANVAS_WORKSPACE_ROWS,
+    }, {
+        viewType: ViewType.SHEETS_IFRAME,
+        offset: [0],
+        x: halfWidth,
+        y: 0,
+        w: halfWidth,
+        h: config.CANVAS_WORKSPACE_ROWS,
+    }];
+};
 
 const ViewFabric = (itemLayout: ItemLayout): JSX.Element => {
     const { viewType: type, offset } = itemLayout;
@@ -53,6 +76,9 @@ const ViewFabric = (itemLayout: ItemLayout): JSX.Element => {
             break;
         case ViewType.RELATED_IMAGE:
             component = <ContextImage offset={offset} />;
+            break;
+        case ViewType.SHEETS_IFRAME:
+            component = <SheetsIframe />;
             break;
         case ViewType.CANVAS_3D_FRONT:
             component = <FrontViewComponent />;
@@ -71,6 +97,10 @@ const ViewFabric = (itemLayout: ItemLayout): JSX.Element => {
 };
 
 const fitLayout = (type: DimensionType, layoutConfig: ItemLayout[]): ItemLayout[] => {
+    if (layoutConfig.some((item: ItemLayout) => item.viewType === ViewType.SHEETS_IFRAME)) {
+        return buildSheetsSideLayout();
+    }
+
     const updatedLayout: ItemLayout[] = [];
 
     const relatedViews = layoutConfig
@@ -144,14 +174,17 @@ const fitLayout = (type: DimensionType, layoutConfig: ItemLayout[]): ItemLayout[
 };
 
 function CanvasLayout({ type }: { type?: DimensionType }): JSX.Element {
+    const dispatch = useDispatch();
     const {
         relatedFiles,
         canvasInstance,
         canvasBackgroundColor,
+        sheetsSideViewUrl,
     } = useSelector((state: CombinedState) => ({
         relatedFiles: state.annotation.player.frame.relatedFiles,
         canvasInstance: state.annotation.canvas.instance,
         canvasBackgroundColor: state.settings.player.canvasBackgroundColor,
+        sheetsSideViewUrl: state.annotation.sheetsSideViewUrl,
     }), shallowEqual);
 
     const computeRowHeight = (): number => {
@@ -207,6 +240,19 @@ function CanvasLayout({ type }: { type?: DimensionType }): JSX.Element {
         setRowHeight(computeRowHeight());
     }, []);
 
+    useEffect(() => {
+        if (sheetsSideViewUrl) {
+            setLayoutConfig(buildSheetsSideLayout());
+            setFullscreenKey('');
+        }
+    }, [sheetsSideViewUrl]);
+
+    useUpdateEffect(() => {
+        if (!sheetsSideViewUrl) {
+            setLayoutConfig([...getLayout()]);
+        }
+    }, [sheetsSideViewUrl, getLayout]);
+
     useUpdateEffect(() => {
         window.dispatchEvent(new Event('resize'));
     }, [layoutConfig]);
@@ -221,7 +267,7 @@ function CanvasLayout({ type }: { type?: DimensionType }): JSX.Element {
     }));
 
     const singleClassName = 'cvat-canvas-grid-root-single';
-    const className = !relatedFiles && children.length <= 1 ?
+    const className = !relatedFiles && !sheetsSideViewUrl && children.length <= 1 ?
         `cvat-canvas-grid-root ${singleClassName}` : 'cvat-canvas-grid-root';
 
     return (
@@ -257,6 +303,8 @@ function CanvasLayout({ type }: { type?: DimensionType }): JSX.Element {
                     { children.map((child: JSX.Element, idx: number): JSX.Element => {
                         const { viewType, viewIndex } = layoutConfig[idx];
                         const key = typeof viewIndex !== 'undefined' ? `${viewType}_${viewIndex}` : `${viewType}`;
+                        const isClosable = viewType === ViewType.RELATED_IMAGE ||
+                            viewType === ViewType.SHEETS_IFRAME;
                         return (
                             <div
                                 style={fullscreenKey === key ? { backgroundColor: canvasBackgroundColor } : {}}
@@ -269,11 +317,13 @@ function CanvasLayout({ type }: { type?: DimensionType }): JSX.Element {
                                 <CloseOutlined
                                     className='cvat-grid-item-close-button'
                                     style={{
-                                        pointerEvents: viewType !== ViewType.RELATED_IMAGE ? 'none' : undefined,
-                                        opacity: viewType !== ViewType.RELATED_IMAGE ? 0.2 : undefined,
+                                        pointerEvents: !isClosable ? 'none' : undefined,
+                                        opacity: !isClosable ? 0.2 : undefined,
                                     }}
                                     onClick={() => {
-                                        if (viewType === ViewType.RELATED_IMAGE) {
+                                        if (viewType === ViewType.SHEETS_IFRAME) {
+                                            dispatch(closeSheetsSideView());
+                                        } else if (viewType === ViewType.RELATED_IMAGE) {
                                             setLayoutConfig(
                                                 layoutConfig
                                                     .filter((item: ItemLayout) => !(
@@ -358,7 +408,9 @@ function CanvasLayout({ type }: { type?: DimensionType }): JSX.Element {
                 </CVATTooltip>
                 <CVATTooltip title='Reload layout'>
                     <ReloadOutlined onClick={() => {
-                        setLayoutConfig([...getLayout()]);
+                        setLayoutConfig(
+                            sheetsSideViewUrl ? buildSheetsSideLayout() : [...getLayout()],
+                        );
                         window.dispatchEvent(new Event('resize'));
                     }}
                     />

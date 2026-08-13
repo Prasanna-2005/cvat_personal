@@ -116,7 +116,7 @@ export default function AnnotationPageComponent(props: Props): JSX.Element {
                         <span>
                             {`${job.projectId ? 'Project' : 'Task'} ${
                                 job.projectId || job.taskId
-                            } does not contain any labels. `}
+                                } does not contain any labels. `}
                             <a href={`/${job.projectId ? 'projects' : 'tasks'}/${job.projectId || job.taskId}/`}>
                                 Add
                             </a>
@@ -135,6 +135,12 @@ export default function AnnotationPageComponent(props: Props): JSX.Element {
             job.logger.log(EventScope.loadWorkspace, { obj_name: workspace });
         }
     }, [job, workspace]);
+
+    useEffect(() => {
+        if (job && typeof frameNumber === 'number') {
+            job.activityFrame = frameNumber;
+        }
+    }, [job, frameNumber]);
 
     if (job === null || !annotationsInitialized) {
         return <Spin size='large' className='cvat-spinner' />;

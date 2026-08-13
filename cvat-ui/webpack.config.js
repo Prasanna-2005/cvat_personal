@@ -77,10 +77,10 @@ module.exports = (env, argv = {}) => {
                 directory: path.join(__dirname, 'dist'),
             },
             headers: {
-                // to enable SharedArrayBuffer and ONNX multithreading
-                // https://cloudblogs.microsoft.com/opensource/2021/09/02/onnx-runtime-web-running-your-machine-learning-model-in-browser/
+                // COEP intentionally omitted: it blocks embedding Google Sheets beside the canvas
+                // (child frames must also send COEP; Google does not). Trade-off: SharedArrayBuffer /
+                // ONNX multithreading is unavailable; WASM still runs single-threaded.
                 'Cross-Origin-Opener-Policy': 'same-origin',
-                'Cross-Origin-Embedder-Policy': 'credentialless',
                 'Service-Worker-Allowed': '/',
             },
             proxy: [{
